@@ -21,7 +21,6 @@ Run individually:
 
 ```bash
 pnpm --filter web dev       # Next.js → localhost:3000
-pnpm --filter web-vite dev  # Vite → localhost:5173
 pnpm --filter mobile dev    # Expo Metro bundler
 ```
 
@@ -31,7 +30,7 @@ Other commands: `pnpm build`, `pnpm lint`, `pnpm typecheck`
 
 | Layer | Technology |
 |-------|------------|
-| Web | Next.js 16 or Vite + TanStack Router |
+| Web | Next.js 16 |
 | Mobile | Expo SDK 54 (React Native) |
 | Shared UI | React Native + NativeWind |
 | Build | Turborepo, pnpm workspaces, TypeScript |
@@ -43,29 +42,10 @@ Components in `packages/ui/` are written once with React Native + NativeWind. On
 ```
 ├── apps/
 │   ├── mobile/     # Expo React Native app
-│   ├── web/        # Next.js web app
-│   └── web-vite/   # Vite web app (alternative)
+│   └── web/        # Next.js web app
 ├── packages/
 │   └── ui/         # Shared component library
 └── turbo.json      # Turborepo config
-```
-
-### Choosing a Web Framework
-
-Both `web` (Next.js) and `web-vite` (Vite + TanStack Router) are included. Remove the one you don't need:
-
-**Keep Next.js only:**
-```bash
-rm -rf apps/web-vite
-pnpm install
-```
-
-**Keep Vite only:**
-```bash
-rm -rf apps/web
-mv apps/web-vite apps/web
-# Update "name" in apps/web/package.json from "web-vite" to "web"
-pnpm install
 ```
 
 ## Author
