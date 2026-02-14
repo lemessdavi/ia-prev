@@ -1,77 +1,73 @@
-# Welcome to your new ignited app!
+# Universal React Monorepo
 
-> The latest and greatest boilerplate for Infinite Red opinions
+Build React components once, run on web, iOS, and Android. A Turborepo + NativeWind monorepo template with shared UI.
 
-This is the boilerplate that [Infinite Red](https://infinite.red) uses as a way to test bleeding-edge changes to our React Native stack.
+![Demo](./universal-react-monorepo-demo.png)
 
-- [Quick start documentation](https://github.com/infinitered/ignite/blob/master/docs/boilerplate/Boilerplate.md)
-- [Full documentation](https://github.com/infinitered/ignite/blob/master/docs/README.md)
+> **New to monorepos?** Follow the [step-by-step guide](https://www.gurselcakar.com/monorepo) that built this template.
 
 ## Getting Started
 
+**Prerequisites:** Node.js 18+, pnpm 10+, and optionally Xcode/Android Studio for mobile.
+
 ```bash
+git clone https://github.com/gurselcakar/universal-react-monorepo.git
+cd universal-react-monorepo
 pnpm install
-pnpm run start
+pnpm dev              # Start all apps
 ```
 
-To make things work on your local simulator, or on your phone, you need first to [run `eas build`](https://github.com/infinitered/ignite/blob/master/docs/expo/EAS.md). We have many shortcuts on `package.json` to make it easier:
+Run individually:
 
 ```bash
-pnpm run build:ios:sim # build for ios simulator
-pnpm run build:ios:device # build for ios device
-pnpm run build:ios:prod # build for ios device
+pnpm --filter web dev       # Next.js → localhost:3000
+pnpm --filter web-vite dev  # Vite → localhost:5173
+pnpm --filter mobile dev    # Expo Metro bundler
 ```
 
-### `./assets` directory
+Other commands: `pnpm build`, `pnpm lint`, `pnpm typecheck`
 
-This directory is designed to organize and store various assets, making it easy for you to manage and use them in your application. The assets are further categorized into subdirectories, including `icons` and `images`:
+## Tech Stack
 
-```tree
-assets
-├── icons
-└── images
+| Layer | Technology |
+|-------|------------|
+| Web | Next.js 16 or Vite + TanStack Router |
+| Mobile | Expo SDK 54 (React Native) |
+| Shared UI | React Native + NativeWind |
+| Build | Turborepo, pnpm workspaces, TypeScript |
+
+Components in `packages/ui/` are written once with React Native + NativeWind. On web, `react-native-web` renders them as HTML. On mobile, Expo renders them natively.
+
+## Project Structure
+
+```
+├── apps/
+│   ├── mobile/     # Expo React Native app
+│   ├── web/        # Next.js web app
+│   └── web-vite/   # Vite web app (alternative)
+├── packages/
+│   └── ui/         # Shared component library
+└── turbo.json      # Turborepo config
 ```
 
-**icons**
-This is where your icon assets will live. These icons can be used for buttons, navigation elements, or any other UI components. The recommended format for icons is PNG, but other formats can be used as well.
+### Choosing a Web Framework
 
-Ignite comes with a built-in `Icon` component. You can find detailed usage instructions in the [docs](https://github.com/infinitered/ignite/blob/master/docs/boilerplate/app/components/Icon.md).
+Both `web` (Next.js) and `web-vite` (Vite + TanStack Router) are included. Remove the one you don't need:
 
-**images**
-This is where your images will live, such as background images, logos, or any other graphics. You can use various formats such as PNG, JPEG, or GIF for your images.
-
-Another valuable built-in component within Ignite is the `AutoImage` component. You can find detailed usage instructions in the [docs](https://github.com/infinitered/ignite/blob/master/docs/Components-AutoImage.md).
-
-How to use your `icon` or `image` assets:
-
-```typescript
-import { Image } from 'react-native';
-
-const MyComponent = () => {
-  return (
-    <Image source={require('assets/images/my_image.png')} />
-  );
-};
+**Keep Next.js only:**
+```bash
+rm -rf apps/web-vite
+pnpm install
 ```
 
-## Running Maestro end-to-end tests
+**Keep Vite only:**
+```bash
+rm -rf apps/web
+mv apps/web-vite apps/web
+# Update "name" in apps/web/package.json from "web-vite" to "web"
+pnpm install
+```
 
-Follow our [Maestro Setup](https://ignitecookbook.com/docs/recipes/MaestroSetup) recipe.
+## Author
 
-## Next Steps
-
-### Ignite Cookbook
-
-[Ignite Cookbook](https://ignitecookbook.com/) is an easy way for developers to browse and share code snippets (or “recipes”) that actually work.
-
-### Upgrade Ignite boilerplate
-
-Read our [Upgrade Guide](https://ignitecookbook.com/docs/recipes/UpdatingIgnite) to learn how to upgrade your Ignite project.
-
-## Community
-
-⭐️ Help us out by [starring on GitHub](https://github.com/infinitered/ignite), filing bug reports in [issues](https://github.com/infinitered/ignite/issues) or [ask questions](https://github.com/infinitered/ignite/discussions).
-
-💬 Join us on [Slack](https://join.slack.com/t/infiniteredcommunity/shared_invite/zt-1f137np4h-zPTq_CbaRFUOR_glUFs2UA) to discuss.
-
-📰 Make our Editor-in-chief happy by [reading the React Native Newsletter](https://reactnativenewsletter.com/).
+Built by [Gürsel Çakar](https://x.com/gurselcakar). Check out my games: [Hukora](https://hukora.com) and [Arithmego](https://arithmego.com).
