@@ -7,7 +7,9 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "compile": "turbo typecheck",
+    "test": "pnpm -r --if-present test"
   },
   "keywords": [],
   "author": "",

@@ -1,41 +1,38 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons'
+import { Tabs } from 'expo-router'
+import { tokens } from 'config'
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#111827',
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: {
-          borderTopColor: '#e5e7eb',
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
+        headerShown: false,
+        tabBarActiveTintColor: tokens.colors.primary,
+        tabBarInactiveTintColor: tokens.colors.textMuted,
+        tabBarStyle: { borderTopColor: tokens.colors.border }
       }}
     >
       <Tabs.Screen
-        name="(home)"
+        name="index"
         options={{
-          title: 'Home',
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
+          title: 'Conversas',
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbox-ellipses-outline" size={size} color={color} />
         }}
       />
       <Tabs.Screen
-        name="demo"
+        name="chat"
         options={{
-          title: 'Components',
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
-          ),
+          title: 'Chat',
+          tabBarIcon: ({ color, size }) => <Ionicons name="paper-plane-outline" size={size} color={color} />
+        }}
+      />
+      <Tabs.Screen
+        name="dossie"
+        options={{
+          title: 'Dossiê',
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" size={size} color={color} />
         }}
       />
     </Tabs>
-  );
+  )
 }
