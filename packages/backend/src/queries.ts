@@ -9,11 +9,11 @@ export function listConversationsWithUnreadBadge(input: {
   store: InMemoryBackendStore;
 }): ConversationListItem[] {
   const session = requireSession(input.session);
-  const conversations = input.store.listConversationsByUser(session.userId);
+  const conversations = input.store.listConversationsByUser(session.userId, session.tenantId);
 
   const result = conversations.map((conversation) => {
     const unreadCount = input.store
-      .listMessages(conversation.id)
+      .listMessages(conversation.id, session.tenantId)
       .filter((message) => message.senderId !== session.userId && !message.readBy.includes(session.userId)).length;
 
     return {
@@ -26,7 +26,7 @@ export function listConversationsWithUnreadBadge(input: {
     };
   });
 
-  logInfo("Conversations listed.", { userId: session.userId, count: result.length });
+  logInfo("Conversations listed.", { tenantId: session.tenantId, userId: session.userId, count: result.length });
   return result;
 }
 
@@ -37,14 +37,33 @@ export function getContactDossierWithEvents(input: {
 }) {
   const session = requireSession(input.session);
   const contactId = assertId(input.contactId, "contactId");
-
-  const dossier = input.store.findDossier(contactId);
-  if (!dossier) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", { contactId });
+  if (!input.store.findUser(session.userId, session.tenantId)) {
+    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+      tenantId: session.tenantId,
+      contactId,
+    });
   }
 
-  const events = input.store.listDossierEvents(contactId).slice(0, 5);
-  logInfo("Dossier fetched.", { userId: session.userId, contactId, events: events.length });
+  const dossier = input.store.findDossier(contactId, session.tenantId);
+  if (!dossier) {
+    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+      contactId,
+      tenantId: session.tenantId,
+    });
+  }
+
+  const canAccess =
+    session.userId === contactId ||
+    input.store.hasConversationWithContact(session.userId, contactId, session.tenantId);
+  if (!canAccess) {
+    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+      contactId,
+      tenantId: session.tenantId,
+    });
+  }
+
+  const events = input.store.listDossierEvents(contactId, session.tenantId).slice(0, 5);
+  logInfo("Dossier fetched.", { tenantId: session.tenantId, userId: session.userId, contactId, events: events.length });
 
   return {
     contactId,

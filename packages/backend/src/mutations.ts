@@ -18,20 +18,22 @@ export function sendMessage(input: {
   const attachmentUrl = assertAttachmentUrl(input.attachmentUrl);
   const now = input.now ?? Date.now();
 
-  const conversation = input.store.findConversation(conversationId);
+  const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId });
+    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
   }
 
   if (!conversation.participantIds.includes(session.userId)) {
     throw new BackendError("You cannot send messages to this conversation.", "FORBIDDEN", {
       conversationId,
       userId: session.userId,
+      tenantId: session.tenantId,
     });
   }
 
   const message = {
     id: `msg_${conversationId}_${now}`,
+    tenantId: session.tenantId,
     conversationId,
     senderId: session.userId,
     body,
@@ -41,13 +43,18 @@ export function sendMessage(input: {
   };
 
   input.store.insertMessage(message);
-  input.store.updateConversation(conversationId, {
+  input.store.updateConversation(conversationId, session.tenantId, {
     lastMessagePreview: body,
     lastMessageAt: now,
     lastActivityAt: now,
   });
 
-  logInfo("Message sent.", { conversationId, userId: session.userId, hasAttachment: Boolean(attachmentUrl) });
+  logInfo("Message sent.", {
+    tenantId: session.tenantId,
+    conversationId,
+    userId: session.userId,
+    hasAttachment: Boolean(attachmentUrl),
+  });
   return message;
 }
 
@@ -59,18 +66,24 @@ export function markConversationAsRead(input: {
   const session = requireSession(input.session);
   const conversationId = assertId(input.conversationId, "conversationId");
 
-  const conversation = input.store.findConversation(conversationId);
+  const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId });
+    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
   }
   if (!conversation.participantIds.includes(session.userId)) {
     throw new BackendError("You cannot update this conversation.", "FORBIDDEN", {
       conversationId,
       userId: session.userId,
+      tenantId: session.tenantId,
     });
   }
 
-  const updatedCount = input.store.markConversationRead(conversationId, session.userId);
-  logInfo("Conversation read state updated.", { conversationId, userId: session.userId, updatedCount });
+  const updatedCount = input.store.markConversationRead(conversationId, session.tenantId, session.userId);
+  logInfo("Conversation read state updated.", {
+    tenantId: session.tenantId,
+    conversationId,
+    userId: session.userId,
+    updatedCount,
+  });
   return { conversationId, updatedCount };
 }

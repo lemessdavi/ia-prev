@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "scripts": {
     "compile": "tsc -p tsconfig.json",
-    "test": "node --test dist/test"
+    "test": "node --test dist/test/backend.test.js"
   }
 }

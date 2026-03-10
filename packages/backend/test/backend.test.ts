@@ -10,8 +10,9 @@ import {
   sendMessage,
 } from "../src";
 
-const sessionAna = { userId: "usr_ana" };
-const sessionMarina = { userId: "usr_marina" };
+const sessionAna = { userId: "usr_ana", tenantId: "tenant_legal" };
+const sessionMarina = { userId: "usr_marina", tenantId: "tenant_legal" };
+const sessionAnaWrongTenant = { userId: "usr_ana", tenantId: "tenant_clinic" };
 
 test("list conversations returns unread badge", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
@@ -70,6 +71,18 @@ test("auth is required", () => {
   });
 });
 
+test("session requires tenant id", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  assert.throws(
+    () => listConversationsWithUnreadBadge({ session: { userId: "usr_ana" } as never, store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+});
+
 test("forbidden mutation for non participant", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
@@ -77,6 +90,24 @@ test("forbidden mutation for non participant", () => {
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
+});
+
+test("tenant isolation blocks conversation listing in wrong tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const rows = listConversationsWithUnreadBadge({ session: sessionAnaWrongTenant, store });
+  assert.equal(rows.length, 0);
+});
+
+test("tenant isolation blocks dossier access in wrong tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  assert.throws(
+    () => getContactDossierWithEvents({ session: sessionAnaWrongTenant, contactId: "usr_caio", store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "NOT_FOUND");
       return true;
     },
   );

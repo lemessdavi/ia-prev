@@ -1,11 +1,14 @@
 export type Id = string;
+export type TenantId = string;
 
 export interface Session {
   userId: Id;
+  tenantId: TenantId;
 }
 
 export interface User {
   id: Id;
+  tenantId: TenantId;
   fullName: string;
   email: string;
   avatarUrl: string;
@@ -14,6 +17,7 @@ export interface User {
 
 export interface Conversation {
   id: Id;
+  tenantId: TenantId;
   participantIds: Id[];
   title: string;
   lastMessagePreview: string;
@@ -24,6 +28,7 @@ export interface Conversation {
 
 export interface Message {
   id: Id;
+  tenantId: TenantId;
   conversationId: Id;
   senderId: Id;
   body: string;
@@ -34,6 +39,7 @@ export interface Message {
 
 export interface DossierEvent {
   id: Id;
+  tenantId: TenantId;
   contactId: Id;
   title: string;
   description: string;
@@ -43,6 +49,7 @@ export interface DossierEvent {
 
 export interface Dossier {
   id: Id;
+  tenantId: TenantId;
   contactId: Id;
   role: string;
   company: string;
