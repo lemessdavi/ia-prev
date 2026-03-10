@@ -7,8 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --webpack",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests configured\""
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.1.0",

@@ -1,11 +1,28 @@
-import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { iaPrevTheme as theme } from './theme';
+import { View } from 'react-native';
+import { tv } from 'tailwind-variants';
 
-export function Card({ children }: { children: ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+const cardVariants = tv({
+  base: 'p-5 rounded-lg border',
+  variants: {
+    variant: {
+      default: 'bg-white border-gray-200',
+      elevated: 'bg-white border-gray-100 shadow-md',
+    },
+  },
+  defaultVariants: {
+    variant: 'default',
+  },
+});
+
+interface CardProps {
+  children?: React.ReactNode;
+  variant?: 'default' | 'elevated';
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.lg },
-});
+export function Card({ children, variant = 'default' }: CardProps) {
+  return (
+    <View className={cardVariants({ variant })}>
+      {children}
+    </View>
+  );
+}

@@ -1,5 +1,37 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
-import { iaPrevTheme as theme } from './theme';
+import { Pressable, Text } from 'react-native';
+import { tv } from 'tailwind-variants';
+
+const buttonVariants = tv({
+  slots: {
+    button: 'px-5 py-2.5 rounded-md active:opacity-80',
+    text: 'text-center font-medium text-sm',
+  },
+  variants: {
+    variant: {
+      primary: {
+        button: 'bg-gray-900',
+        text: 'text-white',
+      },
+      secondary: {
+        button: 'bg-gray-100',
+        text: 'text-gray-900',
+      },
+      outline: {
+        button: 'bg-transparent border border-gray-300',
+        text: 'text-gray-700',
+      },
+    },
+    disabled: {
+      true: {
+        button: 'opacity-50',
+      },
+    },
+  },
+  defaultVariants: {
+    variant: 'primary',
+    disabled: false,
+  },
+});
 
 interface ButtonProps {
   title: string;
@@ -9,24 +41,17 @@ interface ButtonProps {
 }
 
 export function Button({ title, onPress, variant = 'primary', disabled = false }: ButtonProps) {
+  const { button, text } = buttonVariants({ variant, disabled });
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={[styles.base, styles[variant], disabled && styles.disabled]}
+      className={button()}
     >
-      <Text style={[styles.text, variant === 'primary' ? styles.textPrimary : styles.textNeutral]}>{title}</Text>
+      <Text className={text()}>
+        {title}
+      </Text>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  base: { paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, borderRadius: theme.radius.sm },
-  primary: { backgroundColor: theme.colors.chipActiveBg },
-  secondary: { backgroundColor: theme.colors.chipBg },
-  outline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.border },
-  text: { textAlign: 'center', fontWeight: '500' },
-  textPrimary: { color: theme.colors.chipActiveText },
-  textNeutral: { color: theme.colors.textPrimary },
-  disabled: { opacity: 0.5 },
-});
