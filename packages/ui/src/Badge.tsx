@@ -1,5 +1,31 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { iaPrevTheme as theme } from './theme';
+import { View, Text } from 'react-native';
+import { tv } from 'tailwind-variants';
+
+const badgeVariants = tv({
+  slots: {
+    container: 'px-2.5 py-1 rounded-full self-start',
+    text: 'text-xs font-medium',
+  },
+  variants: {
+    variant: {
+      default: {
+        container: 'bg-gray-100',
+        text: 'text-gray-700',
+      },
+      success: {
+        container: 'bg-green-100',
+        text: 'text-green-700',
+      },
+      warning: {
+        container: 'bg-amber-100',
+        text: 'text-amber-700',
+      },
+    },
+  },
+  defaultVariants: {
+    variant: 'default',
+  },
+});
 
 interface BadgeProps {
   label: string;
@@ -7,17 +33,11 @@ interface BadgeProps {
 }
 
 export function Badge({ label, variant = 'default' }: BadgeProps) {
+  const { container, text } = badgeVariants({ variant });
+
   return (
-    <View style={[styles.base, styles[variant]]}>
-      <Text style={styles.text}>{label}</Text>
+    <View className={container()}>
+      <Text className={text()}>{label}</Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  base: { borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs, alignSelf: 'flex-start' },
-  default: { backgroundColor: theme.colors.chipBg },
-  success: { backgroundColor: theme.colors.successBg },
-  warning: { backgroundColor: theme.colors.warningBg },
-  text: { color: theme.colors.textPrimary, fontSize: 12, fontWeight: '500' },
-});

@@ -7,15 +7,16 @@
     "build": "next build --webpack",
     "start": "next start --webpack",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests configured\""
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native-web": "~0.21.1",
-    "ui": "workspace:*"
+    "ui": "workspace:*",
+    "config": "workspace:*",
+    "utils": "workspace:*"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

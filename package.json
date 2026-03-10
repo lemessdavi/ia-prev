@@ -9,7 +9,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "compile": "turbo typecheck",
-    "test": "turbo run test"
+    "test": "pnpm -r --if-present test"
   },
   "keywords": [],
   "author": "",
