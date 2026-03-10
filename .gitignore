@@ -10,6 +10,9 @@ dist
 # Turbo
 .turbo
 
+# macOS
+.DS_Store
+
 # Claude local
 .claude
 CLAUDE.md

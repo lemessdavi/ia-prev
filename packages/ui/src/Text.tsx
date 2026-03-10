@@ -1,29 +1,11 @@
-import { Text as RNText } from 'react-native';
-import { tv } from 'tailwind-variants';
+import type { ReactNode } from 'react';
+import { Text as RNText, StyleSheet } from 'react-native';
+import { iaPrevTheme as theme } from './theme';
 
-const textVariants = tv({
-  base: 'text-gray-900',
-  variants: {
-    variant: {
-      title: 'text-xl font-semibold',
-      body: 'text-base',
-      caption: 'text-sm text-gray-500',
-    },
-  },
-  defaultVariants: {
-    variant: 'body',
-  },
+export function Text({ children }: { children: ReactNode }) {
+  return <RNText style={styles.text}>{children}</RNText>;
+}
+
+const styles = StyleSheet.create({
+  text: { color: theme.colors.textPrimary },
 });
-
-interface TextProps {
-  children: React.ReactNode;
-  variant?: 'title' | 'body' | 'caption';
-}
-
-export function Text({ children, variant = 'body' }: TextProps) {
-  return (
-    <RNText className={textVariants({ variant })}>
-      {children}
-    </RNText>
-  );
-}
