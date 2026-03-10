@@ -7,7 +7,9 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "compile": "npm --prefix packages/backend run compile",
+    "test": "npm --prefix packages/backend run compile && npm --prefix packages/backend run test"
   },
   "keywords": [],
   "author": "",
