@@ -8,8 +8,10 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "compile": "npm --prefix packages/backend run compile",
-    "test": "npm --prefix packages/backend run compile && npm --prefix packages/backend run test"
+    "compile": "turbo typecheck",
+    "test": "pnpm -r --if-present test",
+    "backend:compile": "npm --prefix packages/backend run compile",
+    "backend:test": "npm --prefix packages/backend run compile && npm --prefix packages/backend run test"
   },
   "keywords": [],
   "author": "",

@@ -38,7 +38,9 @@
     "react-native-screens": "~4.16.0",
     "react-native-web": "~0.21.1",
     "react-native-webview": "13.15.0",
-    "ui": "workspace:*"
+    "ui": "workspace:*",
+    "config": "workspace:*",
+    "utils": "workspace:*"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
