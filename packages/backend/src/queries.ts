@@ -71,3 +71,26 @@ export function getContactDossierWithEvents(input: {
     recentEvents: events,
   };
 }
+
+export function resolveTenantByPhoneNumberId(input: {
+  phoneNumberId: string;
+  store: InMemoryBackendStore;
+}) {
+  const phoneNumberId = assertId(input.phoneNumberId, "phoneNumberId");
+  const mapping = input.store.findTenantWabaByPhoneNumberId(phoneNumberId);
+  if (!mapping) {
+    throw new BackendError("WABA mapping not found for phone_number_id.", "NOT_FOUND", { phoneNumberId });
+  }
+
+  logInfo("Tenant resolved from phone_number_id.", {
+    phoneNumberId,
+    tenantId: mapping.tenantId,
+    wabaAccountId: mapping.wabaAccountId,
+  });
+
+  return {
+    tenantId: mapping.tenantId,
+    wabaAccountId: mapping.wabaAccountId,
+    displayName: mapping.displayName,
+  };
+}

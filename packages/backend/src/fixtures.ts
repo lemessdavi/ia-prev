@@ -1,46 +1,120 @@
 import type { Database } from "./types";
 
 export function createPrototypeAlignedFixtures(now = Date.now()): Database {
+  const tenants = [
+    {
+      id: "tenant_legal",
+      slug: "lemes-advocacia",
+      name: "Lemes Advocacia",
+      isActive: true,
+      createdAt: now - 1_300_000,
+    },
+    {
+      id: "tenant_clinic",
+      slug: "clinica-sorriso",
+      name: "Clinica Sorriso",
+      isActive: true,
+      createdAt: now - 1_250_000,
+    },
+  ];
+
+  const tenantWabaAccounts = [
+    {
+      id: "waba_map_legal_1",
+      tenantId: "tenant_legal",
+      phoneNumberId: "waba_phone_legal_1",
+      wabaAccountId: "waba_account_legal",
+      displayName: "Lemes Advocacia WABA",
+      createdAt: now - 1_100_000,
+    },
+    {
+      id: "waba_map_clinic_1",
+      tenantId: "tenant_clinic",
+      phoneNumberId: "waba_phone_clinic_1",
+      wabaAccountId: "waba_account_clinic",
+      displayName: "Clinica Sorriso WABA",
+      createdAt: now - 1_050_000,
+    },
+  ];
+
+  const aiProfiles = [
+    {
+      id: "aip_legal_v1",
+      tenantId: "tenant_legal",
+      name: "previdencia-triagem-v1",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      credentialsRef: "secret://tenant_legal/openai_primary",
+      isActive: true,
+      createdAt: now - 1_000_000,
+    },
+    {
+      id: "aip_legal_old",
+      tenantId: "tenant_legal",
+      name: "previdencia-legacy",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      credentialsRef: "secret://tenant_legal/openai_legacy",
+      isActive: false,
+      createdAt: now - 950_000,
+    },
+    {
+      id: "aip_clinic_v1",
+      tenantId: "tenant_clinic",
+      name: "dentista-atendimento-v1",
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      credentialsRef: "secret://tenant_clinic/openai_primary",
+      isActive: true,
+      createdAt: now - 900_000,
+    },
+  ];
+
   const users = [
     {
       id: "usr_ana",
       tenantId: "tenant_legal",
+      username: "ana.lemes",
       fullName: "Ana Lima",
       email: "ana@iaprev.com",
       avatarUrl: "https://cdn.iaprev.com/avatar/ana.png",
-      createdAt: now - 1000000,
+      createdAt: now - 1_000_000,
     },
     {
       id: "usr_caio",
       tenantId: "tenant_legal",
+      username: "caio.nunes",
       fullName: "Caio Nunes",
       email: "caio@iaprev.com",
       avatarUrl: "https://cdn.iaprev.com/avatar/caio.png",
-      createdAt: now - 900000,
+      createdAt: now - 900_000,
     },
     {
       id: "usr_marina",
       tenantId: "tenant_legal",
+      username: "marina.rocha",
       fullName: "Marina Rocha",
       email: "marina@iaprev.com",
       avatarUrl: "https://cdn.iaprev.com/avatar/marina.png",
-      createdAt: now - 800000,
+      createdAt: now - 800_000,
     },
     {
       id: "usr_bruna",
       tenantId: "tenant_clinic",
+      username: "bruna.alves",
       fullName: "Bruna Alves",
       email: "bruna@clinic.com",
       avatarUrl: "https://cdn.iaprev.com/avatar/bruna.png",
-      createdAt: now - 700000,
+      createdAt: now - 700_000,
     },
     {
       id: "usr_joao",
       tenantId: "tenant_clinic",
+      username: "joao.costa",
       fullName: "João Costa",
       email: "joao@clinic.com",
       avatarUrl: "https://cdn.iaprev.com/avatar/joao.png",
-      createdAt: now - 650000,
+      createdAt: now - 650_000,
     },
   ];
 
@@ -49,31 +123,37 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       id: "conv_ana_caio",
       tenantId: "tenant_legal",
       participantIds: ["usr_ana", "usr_caio"],
+      conversationStatus: "PENDENTE_HUMANO" as const,
+      triageResult: "APTO" as const,
       title: "Caio Nunes",
       lastMessagePreview: "Te envio o dossiê atualizado hoje.",
-      lastMessageAt: now - 60000,
-      lastActivityAt: now - 60000,
-      createdAt: now - 500000,
+      lastMessageAt: now - 60_000,
+      lastActivityAt: now - 60_000,
+      createdAt: now - 500_000,
     },
     {
       id: "conv_ana_marina",
       tenantId: "tenant_legal",
       participantIds: ["usr_ana", "usr_marina"],
+      conversationStatus: "EM_TRIAGEM" as const,
+      triageResult: "N_A" as const,
       title: "Marina Rocha",
       lastMessagePreview: "Perfeito, obrigada!",
-      lastMessageAt: now - 120000,
-      lastActivityAt: now - 120000,
-      createdAt: now - 450000,
+      lastMessageAt: now - 120_000,
+      lastActivityAt: now - 120_000,
+      createdAt: now - 450_000,
     },
     {
       id: "conv_bruna_joao",
       tenantId: "tenant_clinic",
       participantIds: ["usr_bruna", "usr_joao"],
+      conversationStatus: "EM_TRIAGEM" as const,
+      triageResult: "N_A" as const,
       title: "João Costa",
       lastMessagePreview: "Preciso reagendar para sexta.",
-      lastMessageAt: now - 30000,
-      lastActivityAt: now - 30000,
-      createdAt: now - 420000,
+      lastMessageAt: now - 30_000,
+      lastActivityAt: now - 30_000,
+      createdAt: now - 420_000,
     },
   ];
 
@@ -84,7 +164,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_ana_caio",
       senderId: "usr_caio",
       body: "Oi Ana, conseguiu revisar o caso?",
-      createdAt: now - 180000,
+      createdAt: now - 180_000,
       readBy: ["usr_caio"],
     },
     {
@@ -93,7 +173,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_ana_caio",
       senderId: "usr_ana",
       body: "Sim, estou finalizando o dossiê.",
-      createdAt: now - 120000,
+      createdAt: now - 120_000,
       readBy: ["usr_ana", "usr_caio"],
     },
     {
@@ -102,7 +182,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_ana_caio",
       senderId: "usr_caio",
       body: "Te envio o dossiê atualizado hoje.",
-      createdAt: now - 60000,
+      createdAt: now - 60_000,
       readBy: ["usr_caio"],
     },
     {
@@ -111,7 +191,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_ana_marina",
       senderId: "usr_ana",
       body: "Confirmamos seu benefício para março.",
-      createdAt: now - 180000,
+      createdAt: now - 180_000,
       readBy: ["usr_ana", "usr_marina"],
     },
     {
@@ -120,7 +200,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_ana_marina",
       senderId: "usr_marina",
       body: "Perfeito, obrigada!",
-      createdAt: now - 120000,
+      createdAt: now - 120_000,
       readBy: ["usr_marina"],
     },
     {
@@ -129,8 +209,45 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationId: "conv_bruna_joao",
       senderId: "usr_joao",
       body: "Preciso reagendar para sexta.",
-      createdAt: now - 30000,
+      createdAt: now - 30_000,
       readBy: ["usr_joao"],
+    },
+  ];
+
+  const attachments = [
+    {
+      id: "att_1",
+      tenantId: "tenant_legal",
+      conversationId: "conv_ana_caio",
+      messageId: "msg_3",
+      fileName: "laudo-medico.pdf",
+      contentType: "application/pdf",
+      url: "https://cdn.iaprev.com/files/laudo-medico.pdf",
+      createdAt: now - 55_000,
+    },
+  ];
+
+  const handoffEvents = [
+    {
+      id: "hand_1",
+      tenantId: "tenant_legal",
+      conversationId: "conv_ana_caio",
+      from: "assistant" as const,
+      to: "human" as const,
+      performedByUserId: "usr_ana",
+      createdAt: now - 50_000,
+    },
+  ];
+
+  const auditLogs = [
+    {
+      id: "audit_1",
+      tenantId: "tenant_legal",
+      actorUserId: "usr_ana",
+      action: "conversation.read",
+      targetType: "conversation",
+      targetId: "conv_ana_caio",
+      createdAt: now - 40_000,
     },
   ];
 
@@ -144,7 +261,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       location: "São Paulo, SP",
       summary: "Aguardando atualização de documentação previdenciária.",
       tags: ["Prioridade Alta", "Documentação"],
-      updatedAt: now - 50000,
+      updatedAt: now - 50_000,
     },
     {
       id: "dos_joao",
@@ -155,7 +272,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       location: "Campinas, SP",
       summary: "Solicitou retorno sobre procedimento odontológico.",
       tags: ["Retorno", "Agenda"],
-      updatedAt: now - 25000,
+      updatedAt: now - 25_000,
     },
   ];
 
@@ -166,7 +283,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       contactId: "usr_caio",
       title: "Documentos recebidos",
       description: "Upload de comprovante de residência.",
-      occurredAt: now - 200000,
+      occurredAt: now - 200_000,
       type: "interaction" as const,
     },
     {
@@ -175,7 +292,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       contactId: "usr_caio",
       title: "Status atualizado",
       description: "Processo em revisão jurídica.",
-      occurredAt: now - 90000,
+      occurredAt: now - 90_000,
       type: "status" as const,
     },
     {
@@ -184,10 +301,22 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       contactId: "usr_joao",
       title: "Pedido de reagendamento",
       description: "Cliente pediu agenda para sexta-feira.",
-      occurredAt: now - 28000,
+      occurredAt: now - 28_000,
       type: "interaction" as const,
     },
   ];
 
-  return { users, conversations, messages, dossiers, dossierEvents };
+  return {
+    tenants,
+    tenantWabaAccounts,
+    aiProfiles,
+    users,
+    conversations,
+    messages,
+    attachments,
+    handoffEvents,
+    auditLogs,
+    dossiers,
+    dossierEvents,
+  };
 }
