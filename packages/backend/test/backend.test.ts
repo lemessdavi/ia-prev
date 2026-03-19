@@ -5,20 +5,31 @@ import {
   InMemoryBackendStore,
   createPrototypeAlignedFixtures,
   getContactDossierWithEvents,
+  listUsers,
   listConversationsWithUnreadBadge,
+  loginWithUsernamePassword,
   markConversationAsRead,
   resolveTenantByPhoneNumberId,
+  resetUserPassword,
   schema,
   sendMessage,
 } from "../src";
 
-const sessionAna = { userId: "usr_ana", tenantId: "tenant_legal", role: "tenant_user" as const };
-const sessionMarina = { userId: "usr_marina", tenantId: "tenant_legal", role: "tenant_user" as const };
-const sessionAnaWrongTenant = { userId: "usr_ana", tenantId: "tenant_clinic", role: "tenant_user" as const };
+function loginAsAna(store: InMemoryBackendStore) {
+  return loginWithUsernamePassword({ store, username: "ana.lima", password: "Ana@123456" });
+}
+
+function loginAsMarina(store: InMemoryBackendStore) {
+  return loginWithUsernamePassword({ store, username: "marina.rocha", password: "Marina@123456" });
+}
+
+function loginAsSuperadmin(store: InMemoryBackendStore) {
+  return loginWithUsernamePassword({ store, username: "ops.root", password: "Root@123456" });
+}
 
 test("list conversations returns unread badge", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const rows = listConversationsWithUnreadBadge({ session: sessionAna, store });
+  const rows = listConversationsWithUnreadBadge({ session: loginAsAna(store), store });
 
   assert.equal(rows.length, 2);
   assert.equal(rows[0]?.conversationId, "conv_ana_caio");
@@ -27,7 +38,7 @@ test("list conversations returns unread badge", () => {
 
 test("dossier query returns recent events", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = getContactDossierWithEvents({ session: sessionAna, contactId: "usr_caio", store });
+  const payload = getContactDossierWithEvents({ session: loginAsAna(store), contactId: "usr_caio", store });
 
   assert.equal(payload.dossier.contactId, "usr_caio");
   assert.equal(payload.recentEvents.length, 2);
@@ -36,9 +47,10 @@ test("dossier query returns recent events", () => {
 
 test("send message updates conversation activity", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
 
   const message = sendMessage({
-    session: sessionAna,
+    session,
     store,
     conversationId: "conv_ana_caio",
     body: "Mensagem nova",
@@ -54,13 +66,14 @@ test("send message updates conversation activity", () => {
 
 test("mark conversation as read clears unread badge", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const before = listConversationsWithUnreadBadge({ session: sessionAna, store });
+  const session = loginAsAna(store);
+  const before = listConversationsWithUnreadBadge({ session, store });
   assert.equal(before.find((row) => row.conversationId === "conv_ana_caio")?.unreadCount, 2);
 
-  const result = markConversationAsRead({ session: sessionAna, store, conversationId: "conv_ana_caio" });
+  const result = markConversationAsRead({ session, store, conversationId: "conv_ana_caio" });
   assert.equal(result.updatedCount, 2);
 
-  const after = listConversationsWithUnreadBadge({ session: sessionAna, store });
+  const after = listConversationsWithUnreadBadge({ session, store });
   assert.equal(after.find((row) => row.conversationId === "conv_ana_caio")?.unreadCount, 0);
 });
 
@@ -76,7 +89,7 @@ test("auth is required", () => {
 test("session requires tenant id", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
-    () => listConversationsWithUnreadBadge({ session: { userId: "usr_ana" } as never, store }),
+    () => listConversationsWithUnreadBadge({ session: { userId: "usr_ana", role: "tenant_user" } as never, store }),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "UNAUTHENTICATED");
@@ -88,11 +101,7 @@ test("session requires tenant id", () => {
 test("session requires role", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
-    () =>
-      listConversationsWithUnreadBadge({
-        session: { userId: "usr_ana", tenantId: "tenant_legal" } as never,
-        store,
-      }),
+    () => listConversationsWithUnreadBadge({ session: { userId: "usr_ana", tenantId: "tenant_legal" } as never, store }),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "UNAUTHENTICATED");
@@ -103,8 +112,9 @@ test("session requires role", () => {
 
 test("forbidden mutation for non participant", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsMarina(store);
   assert.throws(
-    () => sendMessage({ session: sessionMarina, store, conversationId: "conv_ana_caio", body: "oi" }),
+    () => sendMessage({ session, store, conversationId: "conv_ana_caio", body: "oi" }),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "FORBIDDEN");
@@ -113,19 +123,161 @@ test("forbidden mutation for non participant", () => {
   );
 });
 
-test("tenant isolation blocks conversation listing in wrong tenant", () => {
+test("tampering tenantId invalidates a persisted session", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const rows = listConversationsWithUnreadBadge({ session: sessionAnaWrongTenant, store });
-  assert.equal(rows.length, 0);
-});
+  const session = loginAsAna(store);
 
-test("tenant isolation blocks dossier access in wrong tenant", () => {
-  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
-    () => getContactDossierWithEvents({ session: sessionAnaWrongTenant, contactId: "usr_caio", store }),
+    () => listConversationsWithUnreadBadge({ session: { ...session, tenantId: "tenant_clinic" }, store }),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
-      assert.equal(err.code, "NOT_FOUND");
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+});
+
+test("forged session without persisted record is rejected", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  assert.throws(
+    () =>
+      getContactDossierWithEvents({
+        session: {
+          sessionId: "sess_forged",
+          userId: "usr_ana",
+          tenantId: "tenant_legal",
+          role: "tenant_user",
+        },
+        contactId: "usr_caio",
+        store,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+});
+
+test("login with username and password returns persisted session with tenant and role", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+
+  const session = loginWithUsernamePassword({
+    store,
+    username: "ana.lima",
+    password: "Ana@123456",
+    now: 2_000_000,
+  });
+
+  assert.equal(session.userId, "usr_ana");
+  assert.equal(session.tenantId, "tenant_legal");
+  assert.equal(session.role, "tenant_user");
+  assert.ok(session.sessionId.startsWith("sess_"));
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.sessions.length, 1);
+  assert.equal(snapshot.sessions[0]?.id, session.sessionId);
+});
+
+test("login rejects invalid password", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+
+  assert.throws(
+    () => loginWithUsernamePassword({ store, username: "ana.lima", password: "senha-incorreta" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+});
+
+test("disabled user cannot login", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+
+  assert.throws(
+    () => loginWithUsernamePassword({ store, username: "paulo.inativo", password: "Paulo@123456" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
+});
+
+test("tenant user cannot access user list outside own tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  assert.throws(
+    () => listUsers({ session, store, tenantId: "tenant_clinic" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
+});
+
+test("superadmin can access global user list", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const users = listUsers({ session, store });
+
+  assert.equal(users.length, 5);
+  assert.ok(users.some((user) => user.role === "superadmin"));
+  assert.ok(users.some((user) => user.tenantId === "tenant_clinic" && user.username === "bruna.alves"));
+});
+
+test("superadmin can reset password and revoke prior sessions", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const superadminSession = loginAsSuperadmin(store);
+  const anaSession = loginAsAna(store);
+
+  const result = resetUserPassword({
+    session: superadminSession,
+    store,
+    userId: "usr_ana",
+    nextPassword: "Nova@123456",
+    now: 3_000_000,
+  });
+
+  assert.equal(result.userId, "usr_ana");
+  assert.equal(result.revokedSessionCount, 1);
+  assert.equal(result.tenantId, "tenant_legal");
+
+  assert.throws(
+    () => loginWithUsernamePassword({ store, username: "ana.lima", password: "Ana@123456" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+
+  const newSession = loginWithUsernamePassword({ store, username: "ana.lima", password: "Nova@123456" });
+  assert.notEqual(newSession.sessionId, anaSession.sessionId);
+});
+
+test("reset password invalidates an already issued session for queries", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const superadminSession = loginAsSuperadmin(store);
+  const anaSession = loginAsAna(store);
+
+  resetUserPassword({
+    session: superadminSession,
+    store,
+    userId: "usr_ana",
+    nextPassword: "Nova@123456",
+    now: 3_000_000,
+  });
+
+  assert.throws(
+    () => listConversationsWithUnreadBadge({ session: anaSession, store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
       return true;
     },
   );
