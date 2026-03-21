@@ -9,6 +9,7 @@ import {
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
   markConversationAsRead,
+  requireSession,
   resolveTenantByPhoneNumberId,
   resetUserPassword,
   schema,
@@ -102,6 +103,22 @@ test("session requires role", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
     () => listConversationsWithUnreadBadge({ session: { userId: "usr_ana", tenantId: "tenant_legal" } as never, store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "UNAUTHENTICATED");
+      return true;
+    },
+  );
+});
+
+test("session rejects unknown role values", () => {
+  assert.throws(
+    () =>
+      requireSession({
+        userId: "usr_ana",
+        tenantId: "tenant_legal",
+        role: "tenant_admin",
+      } as never),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "UNAUTHENTICATED");

@@ -6,7 +6,8 @@ import type { AuthenticatedSession, Session, TenantId } from "./types";
 import { assertPassword, assertUsername } from "./validators";
 
 export function requireSession(session: Session | null | undefined): Session {
-  if (!session?.userId || !session?.tenantId || !session?.role) {
+  const validRole = session?.role === "superadmin" || session?.role === "tenant_user";
+  if (!session?.userId || !session?.tenantId || !validRole) {
     const error = new BackendError("You must be authenticated to call this function.", "UNAUTHENTICATED");
     logError(error);
     throw error;
