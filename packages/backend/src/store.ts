@@ -1,4 +1,12 @@
-import type { Conversation, Database, DossierEvent, Message, TenantId, User } from "./types";
+import type {
+  Conversation,
+  Database,
+  DossierEvent,
+  Message,
+  TenantId,
+  TenantWabaAccount,
+  User,
+} from "./types";
 import { createPrototypeAlignedFixtures } from "./fixtures";
 
 export class InMemoryBackendStore {
@@ -70,5 +78,9 @@ export class InMemoryBackendStore {
         conversation.participantIds.includes(userId) &&
         conversation.participantIds.includes(contactId),
     );
+  }
+
+  findTenantWabaByPhoneNumberId(phoneNumberId: string): TenantWabaAccount | undefined {
+    return this.state.tenantWabaAccounts.find((item) => item.phoneNumberId === phoneNumberId);
   }
 }

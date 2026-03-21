@@ -1,12 +1,30 @@
 export const schema = {
+  tenants: {
+    indexes: ["by_slug"],
+  },
+  tenantWabaAccounts: {
+    indexes: ["by_tenant", "by_phone_number_id"],
+  },
+  aiProfiles: {
+    indexes: ["by_tenant", "by_tenant_active"],
+  },
   users: {
-    indexes: ["by_tenant", "by_tenant_email"],
+    indexes: ["by_username", "by_tenant", "by_tenant_email"],
   },
   conversations: {
     indexes: ["by_tenant", "by_tenant_participant", "by_tenant_last_activity"],
   },
   messages: {
     indexes: ["by_tenant_conversation", "by_tenant_conversation_created_at"],
+  },
+  attachments: {
+    indexes: ["by_tenant_conversation"],
+  },
+  handoffEvents: {
+    indexes: ["by_tenant_conversation_created_at"],
+  },
+  auditLogs: {
+    indexes: ["by_tenant_created_at"],
   },
   dossiers: {
     indexes: ["by_tenant_contact"],

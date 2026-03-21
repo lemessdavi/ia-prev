@@ -1,14 +1,47 @@
 export type Id = string;
 export type TenantId = string;
+export type UserRole = "superadmin" | "tenant_user";
+export type ConversationStatus = "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO";
+export type TriageResult = "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "N_A";
 
 export interface Session {
   userId: Id;
   tenantId: TenantId;
+  role: UserRole;
+}
+
+export interface Tenant {
+  id: TenantId;
+  slug: string;
+  name: string;
+  isActive: boolean;
+  createdAt: number;
+}
+
+export interface TenantWabaAccount {
+  id: Id;
+  tenantId: TenantId;
+  phoneNumberId: string;
+  wabaAccountId: string;
+  displayName: string;
+  createdAt: number;
+}
+
+export interface AIProfile {
+  id: Id;
+  tenantId: TenantId;
+  name: string;
+  provider: string;
+  model: string;
+  credentialsRef: string;
+  isActive: boolean;
+  createdAt: number;
 }
 
 export interface User {
   id: Id;
   tenantId: TenantId;
+  username: string;
   fullName: string;
   email: string;
   avatarUrl: string;
@@ -19,6 +52,8 @@ export interface Conversation {
   id: Id;
   tenantId: TenantId;
   participantIds: Id[];
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
   title: string;
   lastMessagePreview: string;
   lastMessageAt: number;
@@ -35,6 +70,37 @@ export interface Message {
   attachmentUrl?: string;
   createdAt: number;
   readBy: Id[];
+}
+
+export interface Attachment {
+  id: Id;
+  tenantId: TenantId;
+  conversationId: Id;
+  messageId?: Id;
+  fileName: string;
+  contentType: string;
+  url: string;
+  createdAt: number;
+}
+
+export interface HandoffEvent {
+  id: Id;
+  tenantId: TenantId;
+  conversationId: Id;
+  from: "assistant" | "human";
+  to: "assistant" | "human";
+  performedByUserId?: Id;
+  createdAt: number;
+}
+
+export interface AuditLog {
+  id: Id;
+  tenantId: TenantId;
+  actorUserId?: Id;
+  action: string;
+  targetType: string;
+  targetId: string;
+  createdAt: number;
 }
 
 export interface DossierEvent {
@@ -60,9 +126,15 @@ export interface Dossier {
 }
 
 export interface Database {
+  tenants: Tenant[];
+  tenantWabaAccounts: TenantWabaAccount[];
+  aiProfiles: AIProfile[];
   users: User[];
   conversations: Conversation[];
   messages: Message[];
+  attachments: Attachment[];
+  handoffEvents: HandoffEvent[];
+  auditLogs: AuditLog[];
   dossiers: Dossier[];
   dossierEvents: DossierEvent[];
 }
