@@ -11,6 +11,12 @@ export const schema = {
   users: {
     indexes: ["by_username", "by_tenant", "by_tenant_email"],
   },
+  userAccounts: {
+    indexes: ["by_user", "by_username", "by_role"],
+  },
+  sessions: {
+    indexes: ["by_user", "by_tenant", "by_role"],
+  },
   conversations: {
     indexes: ["by_tenant", "by_tenant_participant", "by_tenant_last_activity"],
   },

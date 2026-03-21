@@ -3,9 +3,10 @@ import type {
   Database,
   DossierEvent,
   Message,
+  StoredSession,
   TenantId,
-  TenantWabaAccount,
   User,
+  UserAccount,
 } from "./types";
 import { createPrototypeAlignedFixtures } from "./fixtures";
 
@@ -18,6 +19,56 @@ export class InMemoryBackendStore {
 
   snapshot(): Database {
     return JSON.parse(JSON.stringify(this.state)) as Database;
+  }
+
+  findUserById(userId: string): User | undefined {
+    return this.state.users.find((user) => user.id === userId);
+  }
+
+  findUserAccountByUsername(username: string): UserAccount | undefined {
+    return this.state.userAccounts.find((account) => account.username === username);
+  }
+
+  findUserAccountByUserId(userId: string): UserAccount | undefined {
+    return this.state.userAccounts.find((account) => account.userId === userId);
+  }
+
+  findSessionById(sessionId: string): StoredSession | undefined {
+    return this.state.sessions.find((session) => session.id === sessionId);
+  }
+
+  listUserAccounts(tenantId?: TenantId): UserAccount[] {
+    return this.state.userAccounts
+      .filter((account) => {
+        if (!tenantId) return true;
+        const user = this.findUserById(account.userId);
+        return user?.tenantId === tenantId;
+      })
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  upsertUserAccount(account: UserAccount): void {
+    const existingIndex = this.state.userAccounts.findIndex((item) => item.userId === account.userId);
+    if (existingIndex === -1) {
+      this.state.userAccounts.push(account);
+      return;
+    }
+
+    this.state.userAccounts[existingIndex] = account;
+  }
+
+  createSession(session: StoredSession): void {
+    this.state.sessions.push(session);
+  }
+
+  revokeSessionsByUserId(userId: string): number {
+    const before = this.state.sessions.length;
+    this.state.sessions = this.state.sessions.filter((session) => session.userId !== userId);
+    return before - this.state.sessions.length;
+  }
+
+  findTenantWabaByPhoneNumberId(phoneNumberId: string) {
+    return this.state.tenantWabaAccounts.find((mapping) => mapping.phoneNumberId === phoneNumberId);
   }
 
   findConversation(conversationId: string, tenantId: TenantId): Conversation | undefined {
@@ -68,7 +119,8 @@ export class InMemoryBackendStore {
   }
 
   findUser(userId: string, tenantId: TenantId): User | undefined {
-    return this.state.users.find((user) => user.id === userId && user.tenantId === tenantId);
+    const user = this.findUserById(userId);
+    return user?.tenantId === tenantId ? user : undefined;
   }
 
   hasConversationWithContact(userId: string, contactId: string, tenantId: TenantId): boolean {
@@ -78,9 +130,5 @@ export class InMemoryBackendStore {
         conversation.participantIds.includes(userId) &&
         conversation.participantIds.includes(contactId),
     );
-  }
-
-  findTenantWabaByPhoneNumberId(phoneNumberId: string): TenantWabaAccount | undefined {
-    return this.state.tenantWabaAccounts.find((item) => item.phoneNumberId === phoneNumberId);
   }
 }

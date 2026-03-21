@@ -1,14 +1,14 @@
-import { requireSession } from "./auth";
+import { assertTenantAccess, requirePersistedSession } from "./auth";
 import { BackendError, logInfo } from "./errors";
 import { InMemoryBackendStore } from "./store";
-import type { ConversationListItem, Session } from "./types";
+import type { ConversationListItem, Session, UserAccountSummary } from "./types";
 import { assertId } from "./validators";
 
 export function listConversationsWithUnreadBadge(input: {
   session?: Session | null;
   store: InMemoryBackendStore;
 }): ConversationListItem[] {
-  const session = requireSession(input.session);
+  const session = requirePersistedSession({ session: input.session, store: input.store });
   const conversations = input.store.listConversationsByUser(session.userId, session.tenantId);
 
   const result = conversations.map((conversation) => {
@@ -35,7 +35,7 @@ export function getContactDossierWithEvents(input: {
   contactId: string;
   store: InMemoryBackendStore;
 }) {
-  const session = requireSession(input.session);
+  const session = requirePersistedSession({ session: input.session, store: input.store });
   const contactId = assertId(input.contactId, "contactId");
   if (!input.store.findUser(session.userId, session.tenantId)) {
     throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
@@ -70,6 +70,54 @@ export function getContactDossierWithEvents(input: {
     dossier,
     recentEvents: events,
   };
+}
+
+export function listUsers(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+  tenantId?: string;
+}): UserAccountSummary[] {
+  const session = requirePersistedSession({ session: input.session, store: input.store });
+  const requestedTenantId = input.tenantId ? assertId(input.tenantId, "tenantId") : undefined;
+  const scopedTenantId =
+    session.role === "superadmin"
+      ? requestedTenantId
+      : assertTenantAccess(session, requestedTenantId ?? session.tenantId);
+
+  const users = input.store
+    .listUserAccounts(scopedTenantId)
+    .map((account) => {
+      const user = input.store.findUserById(account.userId);
+      if (!user) {
+        throw new BackendError("User account is linked to an unknown user.", "NOT_FOUND", {
+          userId: account.userId,
+        });
+      }
+
+      return {
+        userId: user.id,
+        tenantId: user.tenantId,
+        username: account.username,
+        fullName: user.fullName,
+        email: user.email,
+        role: account.role,
+        isActive: account.isActive,
+      };
+    })
+    .sort((a, b) => {
+      const tenantCompare = a.tenantId.localeCompare(b.tenantId);
+      return tenantCompare !== 0 ? tenantCompare : a.username.localeCompare(b.username);
+    });
+
+  logInfo("Users listed.", {
+    userId: session.userId,
+    tenantId: session.tenantId,
+    role: session.role,
+    requestedTenantId: requestedTenantId ?? "all",
+    count: users.length,
+  });
+
+  return users;
 }
 
 export function resolveTenantByPhoneNumberId(input: {

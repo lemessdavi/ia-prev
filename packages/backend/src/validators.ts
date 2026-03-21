@@ -7,6 +7,36 @@ export function assertId(value: string, field: string): string {
   return value;
 }
 
+export function assertUsername(username: string): string {
+  if (!username || typeof username !== "string") {
+    throw new BackendError("Username is required.", "BAD_REQUEST");
+  }
+
+  const normalized = username.trim().toLowerCase();
+  if (normalized.length < 3 || normalized.length > 64 || !/^[a-z0-9._-]+$/.test(normalized)) {
+    throw new BackendError("Username must have 3 to 64 chars and use only letters, numbers, dot, dash or underscore.", "BAD_REQUEST", {
+      username,
+    });
+  }
+
+  return normalized;
+}
+
+export function assertPassword(password: string, field = "password"): string {
+  if (!password || typeof password !== "string") {
+    throw new BackendError(`${field} is required.`, "BAD_REQUEST");
+  }
+
+  if (password.length < 8 || password.length > 128) {
+    throw new BackendError(`${field} must be between 8 and 128 chars.`, "BAD_REQUEST", {
+      field,
+      length: password.length,
+    });
+  }
+
+  return password;
+}
+
 export function assertMessageBody(body: string): string {
   if (!body || typeof body !== "string") {
     throw new BackendError("Message body is required.", "BAD_REQUEST");

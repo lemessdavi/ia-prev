@@ -8,6 +8,21 @@ export interface Session {
   userId: Id;
   tenantId: TenantId;
   role: UserRole;
+  sessionId?: Id;
+  createdAt?: number;
+}
+
+export interface AuthenticatedSession extends Session {
+  sessionId: Id;
+  createdAt: number;
+}
+
+export interface StoredSession {
+  id: Id;
+  userId: Id;
+  tenantId: TenantId;
+  role: UserRole;
+  createdAt: number;
 }
 
 export interface Tenant {
@@ -46,6 +61,25 @@ export interface User {
   email: string;
   avatarUrl: string;
   createdAt: number;
+}
+
+export interface UserAccount {
+  userId: Id;
+  username: string;
+  role: UserRole;
+  isActive: boolean;
+  passwordHash: string;
+  passwordUpdatedAt: number;
+}
+
+export interface UserAccountSummary {
+  userId: Id;
+  tenantId: TenantId;
+  username: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
 }
 
 export interface Conversation {
@@ -130,6 +164,8 @@ export interface Database {
   tenantWabaAccounts: TenantWabaAccount[];
   aiProfiles: AIProfile[];
   users: User[];
+  userAccounts: UserAccount[];
+  sessions: StoredSession[];
   conversations: Conversation[];
   messages: Message[];
   attachments: Attachment[];
