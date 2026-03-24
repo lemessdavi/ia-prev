@@ -5,6 +5,7 @@ import {
   InMemoryBackendStore,
   createPrototypeAlignedFixtures,
   getContactDossierWithEvents,
+  ingestWhatsAppWebhook,
   listUsers,
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
@@ -26,6 +27,86 @@ function loginAsMarina(store: InMemoryBackendStore) {
 
 function loginAsSuperadmin(store: InMemoryBackendStore) {
   return loginWithUsernamePassword({ store, username: "ops.root", password: "Root@123456" });
+}
+
+function buildInboundWebhookPayload(input: {
+  phoneNumberId: string;
+  messageId: string;
+  from: string;
+  type: "text" | "image" | "audio" | "document";
+  body?: string;
+  mediaId?: string;
+  mediaUrl?: string;
+  mimeType?: string;
+  fileName?: string;
+  timestamp?: string;
+}) {
+  const message =
+    input.type === "text"
+      ? {
+          id: input.messageId,
+          from: input.from,
+          timestamp: input.timestamp ?? "1700000000",
+          type: "text" as const,
+          text: { body: input.body ?? "mensagem texto" },
+        }
+      : input.type === "image"
+        ? {
+            id: input.messageId,
+            from: input.from,
+            timestamp: input.timestamp ?? "1700000000",
+            type: "image" as const,
+            image: {
+              id: input.mediaId ?? `media_${input.messageId}`,
+              mime_type: input.mimeType ?? "image/jpeg",
+              caption: input.body ?? "imagem recebida",
+              url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.jpg`,
+            },
+          }
+        : input.type === "audio"
+          ? {
+              id: input.messageId,
+              from: input.from,
+              timestamp: input.timestamp ?? "1700000000",
+              type: "audio" as const,
+              audio: {
+                id: input.mediaId ?? `media_${input.messageId}`,
+                mime_type: input.mimeType ?? "audio/ogg",
+                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.ogg`,
+              },
+            }
+          : {
+              id: input.messageId,
+              from: input.from,
+              timestamp: input.timestamp ?? "1700000000",
+              type: "document" as const,
+              document: {
+                id: input.mediaId ?? `media_${input.messageId}`,
+                filename: input.fileName ?? "documento.pdf",
+                mime_type: input.mimeType ?? "application/pdf",
+                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.pdf`,
+              },
+            };
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "entry_1",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              metadata: {
+                phone_number_id: input.phoneNumberId,
+              },
+              messages: [message],
+            },
+          },
+        ],
+      },
+    ],
+  };
 }
 
 test("list conversations returns unread badge", () => {
@@ -373,4 +454,163 @@ test("routing fails closed when phone_number_id is unknown", () => {
       return true;
     },
   );
+});
+
+test("webhook ingestion isolates tenant routing between tenant A and B", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+
+  const legalPayload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_legal_001",
+    from: "5511999991001",
+    type: "text",
+    body: "Mensagem para tenant legal",
+  });
+  const clinicPayload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_clinic_001",
+    from: "5511999992002",
+    type: "text",
+    body: "Mensagem para tenant clinic",
+  });
+
+  const legalResult = ingestWhatsAppWebhook({ payload: legalPayload, store, now: 1_600_000 });
+  const clinicResult = ingestWhatsAppWebhook({ payload: clinicPayload, store, now: 1_600_500 });
+
+  assert.equal(legalResult.status, "processed");
+  assert.equal(legalResult.tenantId, "tenant_legal");
+  assert.equal(clinicResult.status, "processed");
+  assert.equal(clinicResult.tenantId, "tenant_clinic");
+
+  const snapshot = store.snapshot();
+  const legalMessage = snapshot.messages.find((item) => item.id === legalResult.messageId);
+  const clinicMessage = snapshot.messages.find((item) => item.id === clinicResult.messageId);
+
+  assert.equal(legalMessage?.tenantId, "tenant_legal");
+  assert.equal(legalMessage?.body, "Mensagem para tenant legal");
+  assert.equal(clinicMessage?.tenantId, "tenant_clinic");
+  assert.equal(clinicMessage?.body, "Mensagem para tenant clinic");
+  assert.notEqual(legalMessage?.tenantId, clinicMessage?.tenantId);
+});
+
+test("webhook ingestion fails closed when phone_number_id is unknown", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const before = store.snapshot();
+
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_unknown",
+    messageId: "wamid_unknown_001",
+    from: "5511999993003",
+    type: "text",
+    body: "Mensagem sem mapeamento",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_601_000 });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "unmapped_phone_number_id");
+
+  const after = store.snapshot();
+  assert.equal(after.messages.length, before.messages.length);
+  assert.equal(after.attachments.length, before.attachments.length);
+  assert.ok(after.auditLogs.some((log) => log.action === "webhook.routing.failed" && log.targetId === "waba_phone_unknown"));
+});
+
+test("webhook ingestion is idempotent for reprocessed webhook id", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_idempotent_001",
+    from: "5511999994004",
+    type: "text",
+    body: "Teste de idempotencia",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload, store, now: 1_602_000 });
+  const second = ingestWhatsAppWebhook({ payload, store, now: 1_602_100 });
+
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "ignored");
+  assert.equal(second.deduplicated, true);
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
+});
+
+test("webhook ingestion persists text message", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_text_001",
+    from: "5511999995005",
+    type: "text",
+    body: "Mensagem de texto inbound",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_603_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const message = snapshot.messages.find((item) => item.id === result.messageId);
+  assert.equal(message?.body, "Mensagem de texto inbound");
+  assert.equal(message?.attachmentUrl, undefined);
+});
+
+test("webhook ingestion persists image attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_image_001",
+    from: "5511999996006",
+    type: "image",
+    body: "Comprovante em imagem",
+    mimeType: "image/jpeg",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_604_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_legal");
+  assert.equal(attachment?.contentType, "image/jpeg");
+});
+
+test("webhook ingestion persists audio attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_audio_001",
+    from: "5511999997007",
+    type: "audio",
+    mimeType: "audio/ogg",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_605_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_clinic");
+  assert.equal(attachment?.contentType, "audio/ogg");
+});
+
+test("webhook ingestion persists pdf attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_pdf_001",
+    from: "5511999998008",
+    type: "document",
+    fileName: "laudo.pdf",
+    mimeType: "application/pdf",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_606_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_clinic");
+  assert.equal(attachment?.contentType, "application/pdf");
+  assert.equal(attachment?.fileName, "laudo.pdf");
 });

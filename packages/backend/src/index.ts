@@ -16,3 +16,4 @@ export {
   loginWithUsernamePassword,
 } from "./auth";
 export { BackendError } from "./errors";
+export { ingestWhatsAppWebhook } from "./webhookIngestion";

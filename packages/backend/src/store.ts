@@ -1,4 +1,6 @@
 import type {
+  Attachment,
+  AuditLog,
   Conversation,
   Database,
   DossierEvent,
@@ -75,10 +77,20 @@ export class InMemoryBackendStore {
     return this.state.conversations.find((item) => item.id === conversationId && item.tenantId === tenantId);
   }
 
+  findConversationByParticipant(participantId: string, tenantId: TenantId): Conversation | undefined {
+    return this.state.conversations.find(
+      (conversation) => conversation.tenantId === tenantId && conversation.participantIds.includes(participantId),
+    );
+  }
+
   listMessages(conversationId: string, tenantId: TenantId): Message[] {
     return this.state.messages
       .filter((message) => message.conversationId === conversationId && message.tenantId === tenantId)
       .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  findMessage(messageId: string, tenantId: TenantId): Message | undefined {
+    return this.state.messages.find((message) => message.id === messageId && message.tenantId === tenantId);
   }
 
   listConversationsByUser(userId: string, tenantId: TenantId): Conversation[] {
@@ -95,6 +107,18 @@ export class InMemoryBackendStore {
 
   insertMessage(message: Message): void {
     this.state.messages.push(message);
+  }
+
+  insertConversation(conversation: Conversation): void {
+    this.state.conversations.push(conversation);
+  }
+
+  insertAttachment(attachment: Attachment): void {
+    this.state.attachments.push(attachment);
+  }
+
+  insertAuditLog(auditLog: AuditLog): void {
+    this.state.auditLogs.push(auditLog);
   }
 
   updateConversation(conversationId: string, tenantId: TenantId, patch: Partial<Conversation>): void {
