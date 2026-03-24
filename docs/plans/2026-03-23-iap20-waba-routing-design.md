@@ -1,83 +1,82 @@
-# IAP-20 - WABA Routing & Ingestao (Design + Entregaveis)
+# IAP-20 - WABA Routing Convex-only (Design + Entregaveis)
 
 Date: 2026-03-23  
-Status: Implementado
+Status: Implementado em Convex
 
 ## 1) Escopo confirmado
 
 Card alvo: `IAP-20`  
-Objetivo: entrada/normalizacao de eventos WhatsApp com roteamento tenant-aware por `phone_number_id`, fail-closed em mapeamento ausente, persistencia correta de mensagem/anexo, idempotencia basica e auditoria minima.
+Objetivo: ingestao de webhook WhatsApp no backend Convex com roteamento tenant-aware por `phone_number_id`, fail-closed auditavel, idempotencia sem colisao e persistencia correta de mensagem/anexo por tenant.
 
-## 2) Abordagens consideradas
+## 2) Arquitetura escolhida
 
-1. Modulo novo de ingestao + reuso do store atual (**escolhida**).  
-2. Acoplar ingestao dentro de `queries.ts`.  
-3. Criar camada de servico mais ampla para webhook.
+1. Entrada HTTP em `packages/convex-backend/convex/http.ts` via `httpAction` (rota `POST /webhooks/waba`).
+2. Processamento transacional em `packages/convex-backend/convex/wabaWebhook.ts` (`processIncomingWebhook`).
+3. Persistencia em tabelas Convex (`wabaConversations`, `wabaMessages`, `wabaAttachments`, `wabaWebhookDeliveries`, `wabaAuditLogs`).
 
-Decisao: abordagem 1 por menor risco de conflito com `IAP-19`, diff isolado e pipeline explicito.
+Decisao: manter toda a cadeia no Convex para eliminar dependencia de `packages/backend/**` neste card.
 
-## 3) Matriz card x levantamento (RF/RNF/RN/UC)
+## 3) Fluxo implementado
 
-| Item do card IAP-20 | RF | RNF | RN | UC | Cobertura |
-| --- | --- | --- | --- | --- | --- |
-| Normalizar evento WhatsApp | RF-01 | RNF-01 (confiabilidade de parse) | RN-01 (aceitar tipos text/image/audio/document) | UC-01 | `normalizeInboundMessage` em `webhookIngestion.ts` |
-| Resolver tenant por `phone_number_id` | RF-02 | RNF-02 (isolamento tenant) | RN-02 (resolver sempre antes de persistir) | UC-01/UC-02 | `resolveTenantByPhoneNumberId` + pipeline |
-| Fail-closed sem mapeamento | RF-03 | RNF-03 (seguranca operacional) | RN-03 (bloquear persistencia) | UC-03 | retorno `status=blocked` + `webhook.routing.failed` |
-| Associar mensagem/anexo ao tenant/conversa corretos | RF-04 | RNF-02 | RN-04 (conversa por `tenant + waContactId`) | UC-01/UC-04 | `upsertConversation`, `insertMessage`, `insertAttachment` |
-| Ingestao texto, imagem, audio, PDF | RF-05 | RNF-01 | RN-05 (media vira attachment) | UC-04 | testes dedicados para 4 tipos |
-| Idempotencia para webhook reprocessado | RF-06 | RNF-04 (retry-safe) | RN-06 (dedupe por `messageId` normalizado) | UC-05 | `findMessage` + retorno `ignored` |
-| Log/auditoria minima de roteamento e falha | RF-07 | RNF-05 (auditabilidade) | RN-07 (auditar ingestao/duplicata/falha) | UC-06 | `insertAuditLog` + `logInfo/logError` |
+1. `httpAction` recebe o payload bruto e invoca mutation interna de processamento.
+2. Payload e normalizado para mensagens inbound.
+3. Tenant e resolvido por `phone_number_id` via indice `wabaTenantMappings.by_phone_number_id`.
+4. Sem mapeamento ativo: bloqueia (fail-closed), audita e nao persiste mensagem/anexo.
+5. Com mapeamento: aplica idempotencia, upsert de conversa e persistencia tenant-aware de mensagem/anexo.
+6. Auditoria registra eventos de processamento, duplicata e bloqueio.
 
-Legenda curta:
-- RF: requisito funcional
-- RNF: requisito nao funcional
-- RN: regra de negocio
-- UC: caso de uso
+## 4) Requisitos-chave do card
 
-## 4) Fluxo de roteamento implementado
+### 4.1 Webhook entrypoint via HTTP action
 
-Pipeline executado por `ingestWhatsAppWebhook`:
+- `packages/convex-backend/convex/http.ts`
+- `POST /webhooks/waba` chama `processIncomingWebhook`.
+- Retorno `404` em bloqueio total (fail-closed) e `200` nos demais cenarios.
 
-1. Normaliza payload (`phone_number_id`, `message.id`, `from`, tipo, conteudo, anexo).
-2. Resolve tenant por `phone_number_id`.
-3. Se mapeamento ausente: bloqueia (fail-closed), audita falha e retorna `blocked`.
-4. Deduplica por `messageId` normalizado (`wa_<external_id>`).
-5. Persiste conversa (upsert), mensagem e anexo (quando existir).
-6. Registra auditoria de ingestao/duplicata e logs estruturados.
+### 4.2 Roteamento por `phone_number_id` com indice
 
-## 5) Estrategia de idempotencia
+- Tabela `wabaTenantMappings` em `schema.ts` com indice `by_phone_number_id`.
+- Resolucao de tenant usando consulta indexada (`unique()`).
 
-- Chave de dedupe: `messageId` normalizado (`wa_<external_message_id>`).
-- Antes de persistir, busca `findMessage(messageId, tenantId)`.
-- Se ja existir: nao duplica mensagem/anexo, registra `webhook.duplicate.ignored` e retorna `status=ignored`.
+### 4.3 Fail-closed + auditoria
 
-## 6) Evidencias de testes executados
+Eventos bloqueados auditados em `wabaAuditLogs`:
+- `unknown_phone_number_id`
+- `missing_phone_number_id`
+- `invalid_json`
 
-Comandos:
+Em bloqueio total do lote, a rota HTTP retorna `404`.
+
+### 4.4 Idempotencia sem colisao
+
+- Chave: `JSON.stringify(["waba_inbound_v1", tenantId, phoneNumberId, externalMessageId])`.
+- Dedupe por indice `wabaWebhookDeliveries.by_idempotency_key`.
+- Cobertura de teste para ids com caracteres especiais garante ausencia de colisao por concatenacao ambigua.
+
+### 4.5 Persistencia tenant-aware de mensagem/anexo
+
+- `wabaMessages` grava `tenantId`, `phoneNumberId`, `conversationId` e payload bruto.
+- `wabaAttachments` grava `tenantId`, `conversationId`, `messageId` e metadados de midia.
+- Testes asseguram isolamento entre tenants distintos.
+
+## 5) Evidencias de validacao
+
+Comandos de validacao do pacote Convex:
 
 ```bash
-npm --prefix packages/backend run compile
-npm --prefix packages/backend run test
+pnpm --filter @repo/convex-backend typecheck
+pnpm --filter @repo/convex-backend test
 ```
 
-Resultado:
-- `compile`: sucesso
-- `test`: `31` testes passando (`0` falhas)
-- Cobertura direta de IAP-20:
-  - isolamento tenant A/B
-  - fail-closed para `phone_number_id` desconhecido
-  - idempotencia (mesmo webhook id)
-  - ingestao texto, imagem, audio e PDF
-  - testes negativos de isolamento
+Cobertura principal do IAP-20 em `packages/convex-backend/test/wabaWebhook.test.ts`:
+- isolamento tenant A/B e persistencia correta de anexos
+- fail-closed para `phone_number_id` desconhecido
+- fail-closed para payload sem `phone_number_id`
+- fail-closed para JSON invalido
+- idempotencia para webhook duplicado
+- dedupe sem colisao com caracteres especiais na chave
 
-## 7) Riscos e gaps remanescentes
+## 6) Declaracao de escopo deste PR
 
-1. Payload real da Meta pode trazer variacoes adicionais nao cobertas no MVP (ex.: multiplas mensagens por evento).
-2. Attachment URL em producao pode exigir resolucao via API de media (hoje usa URL direta/fallback).
-3. Conversa inbound cria agrupamento por `tenant + waContactId`; regras de distribuicao para atendentes humanos ficam para card futuro.
-
-## 8) Declaracao de nao interferencia no IAP-19
-
-- Nao houve alteracao em `apps/web/**` nem `apps/mobile/**`.
-- Alteracoes concentradas em backend (`packages/backend/**`) e documentacao de plano.
-- Nenhuma rota/tela ligada ao escopo do `IAP-19` foi modificada.
+- IAP-20 migrado para fluxo Convex-only.
+- `packages/backend/**` removido do diff alvo deste PR.

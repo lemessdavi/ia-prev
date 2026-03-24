@@ -25,6 +25,7 @@ function buildInboundPayload(input: {
   textBody?: string;
   timestamp?: string;
   withImage?: boolean;
+  omitPhoneNumberId?: boolean;
 }) {
   return {
     object: "whatsapp_business_account",
@@ -37,7 +38,7 @@ function buildInboundPayload(input: {
             value: {
               messaging_product: "whatsapp",
               metadata: {
-                phone_number_id: input.phoneNumberId,
+                ...(input.omitPhoneNumberId ? {} : { phone_number_id: input.phoneNumberId }),
                 display_phone_number: "+55 11 90000-0000",
               },
               contacts: [
@@ -171,6 +172,52 @@ describe("WABA webhook ingestion (Convex native)", () => {
     const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: "phone_unknown" });
     expect(audits).toHaveLength(1);
     expect(audits[0]?.eventType).toBe("unknown_phone_number_id");
+    expect(audits[0]?.outcome).toBe("blocked");
+    expect(audits[0]?.tenantId).toBeNull();
+  });
+
+  it("fails closed and audits payloads without phone_number_id", async () => {
+    const t = convexTest(schema, modules);
+
+    const result = await postWebhook(
+      t,
+      buildInboundPayload({
+        phoneNumberId: "unused",
+        omitPhoneNumberId: true,
+        fromWaId: "5511991010101",
+        externalMessageId: "wamid-missing-phone-id-1",
+      }),
+    );
+
+    expect(result.response.status).toBe(404);
+    expect(result.body).toEqual({ processed: 0, duplicates: 0, blocked: 1, ignored: 0 });
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: "unknown_phone_number_id" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.eventType).toBe("missing_phone_number_id");
+    expect(audits[0]?.outcome).toBe("blocked");
+    expect(audits[0]?.tenantId).toBeNull();
+  });
+
+  it("fails closed and audits invalid json payload", async () => {
+    const t = convexTest(schema, modules);
+
+    const response = await t.fetch("/webhooks/waba", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: "{not-valid-json",
+    });
+
+    const body = (await response.json()) as WebhookResult;
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual({ processed: 0, duplicates: 0, blocked: 1, ignored: 0 });
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: "unknown_phone_number_id" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.eventType).toBe("invalid_json");
     expect(audits[0]?.outcome).toBe("blocked");
     expect(audits[0]?.tenantId).toBeNull();
   });

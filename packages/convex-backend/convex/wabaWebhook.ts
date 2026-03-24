@@ -71,6 +71,15 @@ type NormalizedInboundMessage = {
   rawPayload: string;
 };
 
+type MissingPhoneNumberRoute = {
+  externalMessageId?: string;
+};
+
+type NormalizationResult = {
+  messages: NormalizedInboundMessage[];
+  missingPhoneNumberRoutes: MissingPhoneNumberRoute[];
+};
+
 function businessError(code: string, message: string, details?: Record<string, unknown>) {
   return new ConvexError({
     code,
@@ -143,11 +152,12 @@ function extractAttachments(rawMessage: Record<string, unknown>): NormalizedAtta
   return attachments;
 }
 
-function normalizeInboundMessages(payload: unknown, receivedAt: number): NormalizedInboundMessage[] {
-  const normalized: NormalizedInboundMessage[] = [];
+function normalizeInboundMessages(payload: unknown, receivedAt: number): NormalizationResult {
+  const messages: NormalizedInboundMessage[] = [];
+  const missingPhoneNumberRoutes: MissingPhoneNumberRoute[] = [];
   const root = asObject(payload);
   if (!root) {
-    return normalized;
+    return { messages, missingPhoneNumberRoutes };
   }
 
   const entries = Array.isArray(root.entry) ? root.entry : [];
@@ -179,9 +189,6 @@ function normalizeInboundMessages(payload: unknown, receivedAt: number): Normali
 
       const metadata = asObject(value.metadata);
       const phoneNumberId = asNonEmptyString(metadata?.phone_number_id);
-      if (!phoneNumberId) {
-        continue;
-      }
 
       const contacts = Array.isArray(value.contacts) ? value.contacts : [];
       const firstContact = asObject(contacts[0]);
@@ -189,8 +196,25 @@ function normalizeInboundMessages(payload: unknown, receivedAt: number): Normali
       const contactDisplayName = asNonEmptyString(contactProfile?.name) ?? undefined;
       const contactWaIdFromContacts = asNonEmptyString(firstContact?.wa_id);
 
-      const messages = Array.isArray(value.messages) ? value.messages : [];
-      for (const rawMessageValue of messages) {
+      const rawMessages = Array.isArray(value.messages) ? value.messages : [];
+
+      if (!phoneNumberId) {
+        if (rawMessages.length === 0) {
+          missingPhoneNumberRoutes.push({});
+          continue;
+        }
+
+        for (const rawMessageValue of rawMessages) {
+          const rawMessage = asObject(rawMessageValue);
+          const externalMessageId = asNonEmptyString(rawMessage?.id) ?? undefined;
+          missingPhoneNumberRoutes.push({
+            externalMessageId,
+          });
+        }
+        continue;
+      }
+
+      for (const rawMessageValue of rawMessages) {
         const rawMessage = asObject(rawMessageValue);
         if (!rawMessage) {
           continue;
@@ -207,7 +231,7 @@ function normalizeInboundMessages(payload: unknown, receivedAt: number): Normali
         const body = asNonEmptyString(textPayload?.body) ?? undefined;
         const messageTimestampMs = parseMessageTimestampMs(rawMessage.timestamp, receivedAt);
 
-        normalized.push({
+        messages.push({
           phoneNumberId,
           wabaAccountId: entryWabaAccountId,
           contactWaId: fromWaId,
@@ -224,7 +248,10 @@ function normalizeInboundMessages(payload: unknown, receivedAt: number): Normali
     }
   }
 
-  return normalized;
+  return {
+    messages,
+    missingPhoneNumberRoutes,
+  };
 }
 
 async function findActiveMappingByPhoneNumber(ctx: any, phoneNumberId: string) {
@@ -487,21 +514,44 @@ export const processIncomingWebhook = internalMutation({
       };
     }
 
-    const messages = normalizeInboundMessages(payload, args.receivedAt);
-    if (messages.length === 0) {
+    const normalization = normalizeInboundMessages(payload, args.receivedAt);
+
+    let blocked = 0;
+    for (const missingPhoneRoute of normalization.missingPhoneNumberRoutes) {
+      blocked += 1;
+      await insertAuditLog(ctx, {
+        tenantId: null,
+        phoneNumberId: UNKNOWN_PHONE_NUMBER_ID,
+        eventType: "missing_phone_number_id",
+        outcome: "blocked",
+        externalMessageId: missingPhoneRoute.externalMessageId,
+        details: "Webhook blocked because metadata.phone_number_id is missing.",
+        occurredAt: args.receivedAt,
+      });
+    }
+
+    if (normalization.messages.length === 0) {
+      if (blocked > 0) {
+        return {
+          processed: 0,
+          duplicates: 0,
+          blocked,
+          ignored: 0,
+        };
+      }
+
       return {
         processed: 0,
         duplicates: 0,
-        blocked: 0,
+        blocked,
         ignored: 1,
       };
     }
 
     let processed = 0;
     let duplicates = 0;
-    let blocked = 0;
 
-    for (const message of messages) {
+    for (const message of normalization.messages) {
       const mapping = await findActiveMappingByPhoneNumber(ctx, message.phoneNumberId);
 
       if (!mapping) {
