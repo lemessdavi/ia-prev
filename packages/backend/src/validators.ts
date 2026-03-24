@@ -37,51 +37,6 @@ export function assertPassword(password: string, field = "password"): string {
   return password;
 }
 
-export function assertTenantName(name: string, field = "name"): string {
-  if (!name || typeof name !== "string") {
-    throw new BackendError(`${field} is required.`, "BAD_REQUEST", { field });
-  }
-
-  const normalized = name.trim();
-  if (normalized.length < 2 || normalized.length > 120) {
-    throw new BackendError(`${field} must be between 2 and 120 chars.`, "BAD_REQUEST", {
-      field,
-      length: normalized.length,
-    });
-  }
-
-  return normalized;
-}
-
-export function assertSlug(slug: string, field = "slug"): string {
-  if (!slug || typeof slug !== "string") {
-    throw new BackendError(`${field} is required.`, "BAD_REQUEST", { field });
-  }
-
-  const normalized = slug.trim().toLowerCase();
-  if (!/^[a-z0-9-]{3,64}$/.test(normalized)) {
-    throw new BackendError(`${field} must have 3 to 64 chars and use only lowercase letters, numbers and dash.`, "BAD_REQUEST", {
-      field,
-      slug: normalized,
-    });
-  }
-
-  return normalized;
-}
-
-export function assertEmail(email: string): string {
-  if (!email || typeof email !== "string") {
-    throw new BackendError("email is required.", "BAD_REQUEST");
-  }
-
-  const normalized = email.trim().toLowerCase();
-  if (normalized.length < 5 || normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    throw new BackendError("email is invalid.", "BAD_REQUEST", { email });
-  }
-
-  return normalized;
-}
-
 export function assertMessageBody(body: string): string {
   if (!body || typeof body !== "string") {
     throw new BackendError("Message body is required.", "BAD_REQUEST");
