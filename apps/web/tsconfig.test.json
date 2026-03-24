@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-test",
+    "rootDir": ".",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "types": ["node"],
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx",
+    "incremental": false,
+    "tsBuildInfoFile": "dist-test/.tsbuildinfo"
+  },
+  "include": ["src/server/auth-flow.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

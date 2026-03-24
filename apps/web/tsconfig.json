@@ -31,6 +31,9 @@
       ],
       "utils": [
         "../../packages/utils/src/index.ts"
+      ],
+      "@repo/backend": [
+        "../../packages/backend/src/index.ts"
       ]
     },
     "jsxImportSource": "nativewind",
