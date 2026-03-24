@@ -1,21 +1,51 @@
+"use client";
+
+import { api } from "@repo/convex-backend";
+import { useQuery } from "convex/react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { listAiProfiles, listTenantWabaAccounts, listTenants, listUsers } from "@repo/backend";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { SuperadminDashboard } from "@/components/SuperadminDashboard";
-import { resolveSuperadminGate } from "@/server/auth-flow";
-import { getBackendStore } from "@/server/backend-store";
-import { readValidatedSession } from "@/server/session-cookie";
+import { clearStoredSessionToken, readStoredSessionToken } from "@/lib/session-token";
 
-export default async function SuperadminPage() {
-  const session = await readValidatedSession();
-  const gate = resolveSuperadminGate(session);
+export default function SuperadminPage() {
+  const router = useRouter();
+  const [sessionToken, setSessionToken] = useState<string | null | undefined>(undefined);
 
-  if (gate.status === "redirect") {
-    redirect(gate.to);
+  useEffect(() => {
+    setSessionToken(readStoredSessionToken());
+  }, []);
+
+  const session = useQuery(api.auth.getSession, sessionToken ? { sessionToken } : "skip");
+
+  useEffect(() => {
+    if (sessionToken === undefined) return;
+    if (!sessionToken) {
+      router.replace("/");
+      return;
+    }
+    if (session === undefined) return;
+    if (session) return;
+
+    clearStoredSessionToken();
+    setSessionToken(null);
+    router.replace("/");
+  }, [router, session, sessionToken]);
+
+  if (sessionToken === undefined || (sessionToken && session === undefined)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-6">
+        <p className="text-sm text-zinc-500">Carregando painel…</p>
+      </main>
+    );
   }
 
-  if (gate.status === "forbidden") {
+  if (!session) {
+    return null;
+  }
+
+  if (session.role !== "superadmin") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
         <section className="w-full max-w-lg rounded-2xl border bg-white p-8">
@@ -34,47 +64,5 @@ export default async function SuperadminPage() {
     );
   }
 
-  const authenticatedSession = session!;
-  const store = getBackendStore();
-  const initialTenants = listTenants({
-    session: authenticatedSession,
-    store,
-  });
-  const initialTenantId = initialTenants[0]?.id ?? null;
-
-  const initialUsers = initialTenantId
-    ? listUsers({
-        session: authenticatedSession,
-        store,
-        tenantId: initialTenantId,
-      })
-    : [];
-
-  const initialWabaMappings = initialTenantId
-    ? listTenantWabaAccounts({
-        session: authenticatedSession,
-        store,
-        tenantId: initialTenantId,
-      })
-    : [];
-  const initialWaba = initialWabaMappings[0] ?? null;
-
-  const initialAiProfiles = initialTenantId
-    ? listAiProfiles({
-        session: authenticatedSession,
-        store,
-        tenantId: initialTenantId,
-      })
-    : [];
-
-  return (
-    <SuperadminDashboard
-      session={authenticatedSession}
-      initialTenants={initialTenants}
-      initialTenantId={initialTenantId}
-      initialUsers={initialUsers}
-      initialWaba={initialWaba}
-      initialAiProfiles={initialAiProfiles}
-    />
-  );
+  return <SuperadminDashboard session={session} />;
 }

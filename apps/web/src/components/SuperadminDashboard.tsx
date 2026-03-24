@@ -1,453 +1,255 @@
 "use client";
 
+import { api, type SessionInfo } from "@repo/convex-backend";
 import { tokens } from "config";
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { parseBusinessErrorMessage } from "@/lib/business-error";
 import { LogoutButton } from "./LogoutButton";
-
-type Tenant = {
-  id: string;
-  slug: string;
-  name: string;
-  isActive: boolean;
-  createdAt: number;
-};
-
-type UserAccountSummary = {
-  userId: string;
-  tenantId: string;
-  username: string;
-  fullName: string;
-  email: string;
-  role: "superadmin" | "tenant_user";
-  isActive: boolean;
-};
-
-type TenantWabaAccount = {
-  id: string;
-  tenantId: string;
-  phoneNumberId: string;
-  wabaAccountId: string;
-  displayName: string;
-  createdAt: number;
-};
-
-type AiProfile = {
-  id: string;
-  tenantId: string;
-  name: string;
-  provider: string;
-  model: string;
-  credentialsRef: string;
-  isActive: boolean;
-  createdAt: number;
-};
-
-type LoadStatus = "loading" | "ready" | "empty" | "error" | "forbidden";
-
-type DataState<T> = {
-  status: LoadStatus;
-  data: T;
-  error: string | null;
-};
-
-type HttpResult<T> = {
-  ok: boolean;
-  status: number;
-  data: T | null;
-  error: string | null;
-};
 
 const sectionClassName = "rounded-2xl border p-5";
 
-function buildArrayState<T>(items: T[]): DataState<T[]> {
-  return {
-    status: items.length > 0 ? "ready" : "empty",
-    data: items,
-    error: null,
-  };
-}
+export function SuperadminDashboard({ session }: { session: SessionInfo }) {
+  const sessionToken = session.sessionToken;
 
-function buildNullableState<T>(item: T | null): DataState<T | null> {
-  return {
-    status: item ? "ready" : "empty",
-    data: item,
-    error: null,
-  };
-}
+  const listTenants = useQuery(api.tenants.listTenants, { sessionToken });
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<HttpResult<T>> {
-  try {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-      cache: "no-store",
-    });
+  const selectedTenant = useMemo(
+    () => listTenants?.find((tenant) => tenant.id === selectedTenantId) ?? null,
+    [listTenants, selectedTenantId],
+  );
 
-    const payload = (await response.json().catch(() => null)) as T | { error?: string } | null;
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        status: response.status,
-        data: null,
-        error: (payload as { error?: string } | null)?.error ?? "Erro na requisição.",
-      };
+  useEffect(() => {
+    if (!listTenants) return;
+    if (listTenants.length === 0) {
+      setSelectedTenantId(null);
+      return;
     }
+    if (!selectedTenantId || !listTenants.some((tenant) => tenant.id === selectedTenantId)) {
+      setSelectedTenantId(listTenants[0].id);
+    }
+  }, [listTenants, selectedTenantId]);
 
-    return {
-      ok: true,
-      status: response.status,
-      data: payload as T,
-      error: null,
-    };
-  } catch {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      error: "Falha de conexão com a API.",
-    };
-  }
-}
+  const users = useQuery(api.users.listUsers, selectedTenantId ? { sessionToken, tenantId: selectedTenantId } : "skip");
+  const wabaMappings = useQuery(
+    api.waba.listTenantWabaAccounts,
+    selectedTenantId ? { sessionToken, tenantId: selectedTenantId } : "skip",
+  );
+  const aiProfiles = useQuery(
+    api.aiProfiles.listAiProfiles,
+    selectedTenantId ? { sessionToken, tenantId: selectedTenantId } : "skip",
+  );
 
-function toArrayState<T>(result: HttpResult<{ [key: string]: T[] }>, field: string): DataState<T[]> {
-  if (!result.ok) {
-    return {
-      status: result.status === 403 ? "forbidden" : "error",
-      data: [],
-      error: result.error,
-    };
-  }
-
-  const data = (result.data?.[field as keyof typeof result.data] as T[] | undefined) ?? [];
-  return buildArrayState(data);
-}
-
-function StatusMessage({ state, emptyMessage }: { state: DataState<unknown>; emptyMessage: string }) {
-  if (state.status === "loading") {
-    return <p style={{ color: tokens.colors.textMuted }}>Carregando…</p>;
-  }
-
-  if (state.status === "empty") {
-    return <p style={{ color: tokens.colors.textMuted }}>{emptyMessage}</p>;
-  }
-
-  if (state.status === "forbidden") {
-    return <p style={{ color: "#b45309" }}>Acesso negado para este módulo.</p>;
-  }
-
-  if (state.status === "error") {
-    return <p style={{ color: "#b91c1c" }}>{state.error ?? "Erro inesperado."}</p>;
-  }
-
-  return null;
-}
-
-export function SuperadminDashboard({
-  session,
-  initialTenants,
-  initialTenantId,
-  initialUsers,
-  initialWaba,
-  initialAiProfiles,
-}: {
-  session: {
-    userId: string;
-    tenantId: string;
-  };
-  initialTenants: Tenant[];
-  initialTenantId: string | null;
-  initialUsers: UserAccountSummary[];
-  initialWaba: TenantWabaAccount | null;
-  initialAiProfiles: AiProfile[];
-}) {
-  const initialSelectedTenant = initialTenants.find((tenant) => tenant.id === initialTenantId) ?? null;
-
-  const [tenantsState, setTenantsState] = useState<DataState<Tenant[]>>(buildArrayState(initialTenants));
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(initialTenantId);
-  const [usersState, setUsersState] = useState<DataState<UserAccountSummary[]>>(buildArrayState(initialUsers));
-  const [wabaState, setWabaState] = useState<DataState<TenantWabaAccount | null>>(buildNullableState(initialWaba));
-  const [aiState, setAiState] = useState<DataState<AiProfile[]>>(buildArrayState(initialAiProfiles));
+  const createTenantMutation = useMutation(api.tenants.createTenant);
+  const updateTenantMutation = useMutation(api.tenants.updateTenant);
+  const createTenantUserAction = useAction(api.users.createTenantUser);
+  const setUserActiveMutation = useMutation(api.users.setUserActive);
+  const resetUserPasswordAction = useAction(api.users.resetUserPassword);
+  const upsertWabaMutation = useMutation(api.waba.upsertTenantWabaAccount);
+  const createAiProfileMutation = useMutation(api.aiProfiles.createAiProfile);
+  const setActiveAiProfileMutation = useMutation(api.aiProfiles.setActiveAiProfile);
 
   const [globalMessage, setGlobalMessage] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const [newTenantName, setNewTenantName] = useState("");
   const [newTenantSlug, setNewTenantSlug] = useState("");
-
-  const [tenantEditName, setTenantEditName] = useState(initialSelectedTenant?.name ?? "");
-  const [tenantEditSlug, setTenantEditSlug] = useState(initialSelectedTenant?.slug ?? "");
+  const [tenantEditName, setTenantEditName] = useState("");
+  const [tenantEditSlug, setTenantEditSlug] = useState("");
 
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserFullName, setNewUserFullName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
+  const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
 
-  const [wabaPhoneNumberId, setWabaPhoneNumberId] = useState(initialWaba?.phoneNumberId ?? "");
-  const [wabaAccountId, setWabaAccountId] = useState(initialWaba?.wabaAccountId ?? "");
-  const [wabaDisplayName, setWabaDisplayName] = useState(initialWaba?.displayName ?? "");
+  const [wabaPhoneNumberId, setWabaPhoneNumberId] = useState("");
+  const [wabaAccountId, setWabaAccountId] = useState("");
+  const [wabaDisplayName, setWabaDisplayName] = useState("");
 
   const [newAiName, setNewAiName] = useState("");
   const [newAiProvider, setNewAiProvider] = useState("openai");
   const [newAiModel, setNewAiModel] = useState("gpt-4.1-mini");
   const [newAiCredentialsRef, setNewAiCredentialsRef] = useState("");
 
-  const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setTenantEditName(selectedTenant?.name ?? "");
+    setTenantEditSlug(selectedTenant?.slug ?? "");
+  }, [selectedTenant?.id, selectedTenant?.name, selectedTenant?.slug]);
 
-  const selectedTenant = useMemo(
-    () => tenantsState.data.find((tenant) => tenant.id === selectedTenantId) ?? null,
-    [selectedTenantId, tenantsState.data],
-  );
+  const selectedWaba = wabaMappings?.[0] ?? null;
+  useEffect(() => {
+    setWabaPhoneNumberId(selectedWaba?.phoneNumberId ?? "");
+    setWabaAccountId(selectedWaba?.wabaAccountId ?? "");
+    setWabaDisplayName(selectedWaba?.displayName ?? "");
+  }, [selectedWaba?.id, selectedWaba?.phoneNumberId, selectedWaba?.wabaAccountId, selectedWaba?.displayName]);
 
-  const loadTenantModules = useCallback(async (tenantId: string) => {
-    setUsersState({ status: "loading", data: [], error: null });
-    setWabaState({ status: "loading", data: null, error: null });
-    setAiState({ status: "loading", data: [], error: null });
-
-    const [usersResult, wabaResult, aiResult] = await Promise.all([
-      requestJson<{ users: UserAccountSummary[] }>(`/api/superadmin/users?tenantId=${tenantId}`),
-      requestJson<{ mappings: TenantWabaAccount[] }>(`/api/superadmin/waba?tenantId=${tenantId}`),
-      requestJson<{ profiles: AiProfile[] }>(`/api/superadmin/ai-profiles?tenantId=${tenantId}`),
-    ]);
-
-    const usersMapped = toArrayState<UserAccountSummary>(
-      usersResult as HttpResult<{ [key: string]: UserAccountSummary[] }>,
-      "users",
-    );
-    setUsersState(usersMapped);
-
-    if (!wabaResult.ok) {
-      setWabaState({
-        status: wabaResult.status === 403 ? "forbidden" : "error",
-        data: null,
-        error: wabaResult.error,
-      });
-    } else {
-      const mapping = wabaResult.data?.mappings?.[0] ?? null;
-      setWabaState(buildNullableState(mapping));
-      setWabaPhoneNumberId(mapping?.phoneNumberId ?? "");
-      setWabaAccountId(mapping?.wabaAccountId ?? "");
-      setWabaDisplayName(mapping?.displayName ?? "");
+  async function runAction(actionKey: string, fn: () => Promise<void>, successMessage: string) {
+    setPendingAction(actionKey);
+    setGlobalMessage(null);
+    try {
+      await fn();
+      setGlobalMessage(successMessage);
+    } catch (error) {
+      setGlobalMessage(parseBusinessErrorMessage(error));
+    } finally {
+      setPendingAction(null);
     }
-
-    const aiMapped = toArrayState<AiProfile>(aiResult as HttpResult<{ [key: string]: AiProfile[] }>, "profiles");
-    setAiState(aiMapped);
-  }, []);
-
-  const loadTenants = useCallback(async () => {
-    setTenantsState({ status: "loading", data: [], error: null });
-
-    const result = await requestJson<{ tenants: Tenant[] }>("/api/superadmin/tenants");
-    const mapped = toArrayState<Tenant>(result as HttpResult<{ [key: string]: Tenant[] }>, "tenants");
-    setTenantsState(mapped);
-
-    if (mapped.status === "forbidden" || mapped.status === "error") {
-      return;
-    }
-
-    const candidateId = mapped.data.find((tenant) => tenant.id === selectedTenantId)?.id ?? mapped.data[0]?.id ?? null;
-    setSelectedTenantId(candidateId);
-
-    const candidate = mapped.data.find((tenant) => tenant.id === candidateId) ?? null;
-    setTenantEditName(candidate?.name ?? "");
-    setTenantEditSlug(candidate?.slug ?? "");
-
-    if (!candidateId) {
-      setUsersState({ status: "empty", data: [], error: null });
-      setWabaState({ status: "empty", data: null, error: null });
-      setAiState({ status: "empty", data: [], error: null });
-      return;
-    }
-
-    await loadTenantModules(candidateId);
-  }, [loadTenantModules, selectedTenantId]);
-
-  async function selectTenant(tenant: Tenant) {
-    setSelectedTenantId(tenant.id);
-    setTenantEditName(tenant.name);
-    setTenantEditSlug(tenant.slug);
-    await loadTenantModules(tenant.id);
   }
 
   async function createTenant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setGlobalMessage(null);
-
-    const response = await requestJson<{ tenant: Tenant }>("/api/superadmin/tenants", {
-      method: "POST",
-      body: JSON.stringify({
-        slug: newTenantSlug,
-        name: newTenantName,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível criar tenant.");
-      return;
-    }
-
-    setNewTenantName("");
-    setNewTenantSlug("");
-    await loadTenants();
-    setGlobalMessage("Tenant criado com sucesso.");
+    await runAction(
+      "createTenant",
+      async () => {
+        const created = await createTenantMutation({
+          sessionToken,
+          name: newTenantName,
+          slug: newTenantSlug,
+        });
+        setSelectedTenantId(created.id);
+        setNewTenantName("");
+        setNewTenantSlug("");
+      },
+      "Tenant criado com sucesso.",
+    );
   }
 
   async function updateSelectedTenant(payload: { isActive?: boolean }) {
     if (!selectedTenantId) return;
-    setGlobalMessage(null);
-
-    const response = await requestJson<{ tenant: Tenant }>(`/api/superadmin/tenants/${selectedTenantId}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        name: tenantEditName,
-        slug: tenantEditSlug,
-        ...payload,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível atualizar tenant.");
-      return;
-    }
-
-    await loadTenants();
-    setGlobalMessage("Tenant atualizado.");
+    await runAction(
+      "updateTenant",
+      async () => {
+        await updateTenantMutation({
+          sessionToken,
+          tenantId: selectedTenantId,
+          name: tenantEditName,
+          slug: tenantEditSlug,
+          ...payload,
+        });
+      },
+      "Tenant atualizado.",
+    );
   }
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedTenantId) return;
 
-    const response = await requestJson<{ user: UserAccountSummary }>("/api/superadmin/users", {
-      method: "POST",
-      body: JSON.stringify({
-        tenantId: selectedTenantId,
-        username: newUserUsername,
-        fullName: newUserFullName,
-        email: newUserEmail,
-        password: newUserPassword,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível criar usuário.");
-      return;
-    }
-
-    setNewUserUsername("");
-    setNewUserFullName("");
-    setNewUserEmail("");
-    setNewUserPassword("");
-    await loadTenantModules(selectedTenantId);
-    setGlobalMessage("Usuário criado.");
+    await runAction(
+      "createUser",
+      async () => {
+        await createTenantUserAction({
+          sessionToken,
+          tenantId: selectedTenantId,
+          username: newUserUsername,
+          fullName: newUserFullName,
+          email: newUserEmail,
+          password: newUserPassword,
+        });
+        setNewUserUsername("");
+        setNewUserFullName("");
+        setNewUserEmail("");
+        setNewUserPassword("");
+      },
+      "Usuário criado.",
+    );
   }
 
-  async function toggleUserActive(user: UserAccountSummary) {
-    const response = await requestJson<{ user: { isActive: boolean } }>(`/api/superadmin/users/${user.userId}/active`, {
-      method: "PATCH",
-      body: JSON.stringify({ isActive: !user.isActive }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível atualizar usuário.");
-      return;
-    }
-
-    if (selectedTenantId) {
-      await loadTenantModules(selectedTenantId);
-    }
-    setGlobalMessage("Status do usuário atualizado.");
+  async function toggleUserActive(userId: string, isActive: boolean) {
+    await runAction(
+      `toggleUser_${userId}`,
+      async () => {
+        await setUserActiveMutation({
+          sessionToken,
+          userId,
+          isActive: !isActive,
+        });
+      },
+      "Status do usuário atualizado.",
+    );
   }
 
   async function resetUserPassword(userId: string) {
     const nextPassword = resetPasswords[userId];
     if (!nextPassword) return;
 
-    const response = await requestJson<{ result: { userId: string } }>(`/api/superadmin/users/${userId}/reset-password`, {
-      method: "POST",
-      body: JSON.stringify({ nextPassword }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível resetar senha.");
-      return;
-    }
-
-    setResetPasswords((previous) => ({ ...previous, [userId]: "" }));
-    setGlobalMessage("Senha resetada e sessões anteriores revogadas.");
+    await runAction(
+      `resetPassword_${userId}`,
+      async () => {
+        await resetUserPasswordAction({
+          sessionToken,
+          userId,
+          nextPassword,
+        });
+        setResetPasswords((current) => ({ ...current, [userId]: "" }));
+      },
+      "Senha resetada e sessões anteriores revogadas.",
+    );
   }
 
   async function saveWaba(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedTenantId) return;
 
-    const response = await requestJson<{ mapping: TenantWabaAccount }>("/api/superadmin/waba", {
-      method: "PUT",
-      body: JSON.stringify({
-        tenantId: selectedTenantId,
-        phoneNumberId: wabaPhoneNumberId,
-        wabaAccountId,
-        displayName: wabaDisplayName,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível salvar configuração WABA.");
-      return;
-    }
-
-    await loadTenantModules(selectedTenantId);
-    setGlobalMessage("WABA atualizado.");
+    await runAction(
+      "saveWaba",
+      async () => {
+        await upsertWabaMutation({
+          sessionToken,
+          tenantId: selectedTenantId,
+          phoneNumberId: wabaPhoneNumberId,
+          wabaAccountId,
+          displayName: wabaDisplayName,
+        });
+      },
+      "WABA atualizado.",
+    );
   }
 
   async function createAiProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedTenantId) return;
 
-    const response = await requestJson<{ profile: AiProfile }>("/api/superadmin/ai-profiles", {
-      method: "POST",
-      body: JSON.stringify({
-        tenantId: selectedTenantId,
-        name: newAiName,
-        provider: newAiProvider,
-        model: newAiModel,
-        credentialsRef: newAiCredentialsRef,
-        isActive: false,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível criar perfil de IA.");
-      return;
-    }
-
-    setNewAiName("");
-    setNewAiCredentialsRef("");
-    await loadTenantModules(selectedTenantId);
-    setGlobalMessage("Perfil de IA criado.");
+    await runAction(
+      "createAiProfile",
+      async () => {
+        await createAiProfileMutation({
+          sessionToken,
+          tenantId: selectedTenantId,
+          name: newAiName,
+          provider: newAiProvider,
+          model: newAiModel,
+          credentialsRef: newAiCredentialsRef,
+          isActive: false,
+        });
+        setNewAiName("");
+        setNewAiCredentialsRef("");
+      },
+      "Perfil de IA criado.",
+    );
   }
 
   async function activateAiProfile(profileId: string) {
     if (!selectedTenantId) return;
-
-    const response = await requestJson<{ profile: AiProfile }>("/api/superadmin/ai-profiles/activate", {
-      method: "POST",
-      body: JSON.stringify({
-        tenantId: selectedTenantId,
-        profileId,
-      }),
-    });
-
-    if (!response.ok) {
-      setGlobalMessage(response.error ?? "Não foi possível ativar perfil de IA.");
-      return;
-    }
-
-    await loadTenantModules(selectedTenantId);
-    setGlobalMessage("Perfil de IA ativo atualizado.");
+    await runAction(
+      `activateAi_${profileId}`,
+      async () => {
+        await setActiveAiProfileMutation({
+          sessionToken,
+          tenantId: selectedTenantId,
+          profileId,
+        });
+      },
+      "Perfil de IA ativo atualizado.",
+    );
   }
+
+  const loadingTenants = listTenants === undefined;
+  const loadingUsers = selectedTenantId !== null && users === undefined;
+  const loadingWaba = selectedTenantId !== null && wabaMappings === undefined;
+  const loadingAi = selectedTenantId !== null && aiProfiles === undefined;
 
   return (
     <main
@@ -462,7 +264,7 @@ export function SuperadminDashboard({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.2em]" style={{ color: tokens.colors.textMuted }}>
-                IAP-19
+                IAP-2
               </p>
               <h1 className="mt-1 text-3xl font-semibold">Painel Superadmin</h1>
               <p className="mt-2 text-sm" style={{ color: tokens.colors.textMuted }}>
@@ -487,12 +289,16 @@ export function SuperadminDashboard({
           <aside className={`${sectionClassName} space-y-4`} style={{ borderColor: tokens.colors.border, backgroundColor: tokens.colors.panel }}>
             <div>
               <h2 className="text-lg font-semibold">Tenants</h2>
-              <StatusMessage state={tenantsState} emptyMessage="Nenhum tenant cadastrado." />
+              {loadingTenants ? (
+                <p style={{ color: tokens.colors.textMuted }}>Carregando tenants…</p>
+              ) : !listTenants?.length ? (
+                <p style={{ color: tokens.colors.textMuted }}>Nenhum tenant cadastrado.</p>
+              ) : null}
             </div>
 
-            {tenantsState.status === "ready" || tenantsState.status === "empty" ? (
+            {listTenants?.length ? (
               <div className="space-y-2">
-                {tenantsState.data.map((tenant) => (
+                {listTenants.map((tenant) => (
                   <button
                     key={tenant.id}
                     type="button"
@@ -501,7 +307,7 @@ export function SuperadminDashboard({
                       borderColor: tenant.id === selectedTenantId ? tokens.colors.primary : tokens.colors.border,
                       backgroundColor: tenant.id === selectedTenantId ? "#fff7ed" : "transparent",
                     }}
-                    onClick={() => void selectTenant(tenant)}
+                    onClick={() => setSelectedTenantId(tenant.id)}
                   >
                     <p className="font-medium">{tenant.name}</p>
                     <p className="text-xs" style={{ color: tokens.colors.textMuted }}>
@@ -516,27 +322,25 @@ export function SuperadminDashboard({
               <p className="text-sm font-medium">Novo tenant</p>
               <input
                 required
-                name="tenant_name"
-                autoComplete="off"
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 style={{ borderColor: tokens.colors.border }}
                 placeholder="Nome do tenant…"
-                aria-label="Nome do novo tenant"
                 value={newTenantName}
                 onChange={(event) => setNewTenantName(event.target.value)}
               />
               <input
                 required
-                name="tenant_slug"
-                autoComplete="off"
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 style={{ borderColor: tokens.colors.border }}
                 placeholder="slug-do-tenant…"
-                aria-label="Slug do novo tenant"
                 value={newTenantSlug}
                 onChange={(event) => setNewTenantSlug(event.target.value)}
               />
-              <button type="submit" className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90">
+              <button
+                type="submit"
+                disabled={pendingAction === "createTenant"}
+                className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
                 Criar tenant
               </button>
             </form>
@@ -559,31 +363,31 @@ export function SuperadminDashboard({
                 >
                   <input
                     required
-                    name="selected_tenant_name"
-                    autoComplete="off"
                     className="rounded-xl border px-3 py-2"
                     style={{ borderColor: tokens.colors.border }}
                     value={tenantEditName}
                     onChange={(event) => setTenantEditName(event.target.value)}
-                    aria-label="Nome do tenant"
                   />
                   <input
                     required
-                    name="selected_tenant_slug"
-                    autoComplete="off"
                     className="rounded-xl border px-3 py-2"
                     style={{ borderColor: tokens.colors.border }}
                     value={tenantEditSlug}
                     onChange={(event) => setTenantEditSlug(event.target.value)}
-                    aria-label="Slug do tenant"
                   />
-                  <button className="rounded-xl border px-3 py-2" style={{ borderColor: tokens.colors.border }} type="submit">
+                  <button
+                    className="rounded-xl border px-3 py-2"
+                    style={{ borderColor: tokens.colors.border }}
+                    type="submit"
+                    disabled={pendingAction === "updateTenant"}
+                  >
                     Salvar
                   </button>
                   <button
                     type="button"
                     className="rounded-xl border px-3 py-2"
                     style={{ borderColor: tokens.colors.border }}
+                    disabled={pendingAction === "updateTenant"}
                     onClick={() => void updateSelectedTenant({ isActive: !selectedTenant.isActive })}
                   >
                     {selectedTenant.isActive ? "Desativar" : "Ativar"}
@@ -595,12 +399,16 @@ export function SuperadminDashboard({
             <section className={`${sectionClassName} space-y-4`} style={{ borderColor: tokens.colors.border, backgroundColor: tokens.colors.panel }}>
               <div>
                 <h2 className="text-lg font-semibold">Usuários</h2>
-                <StatusMessage state={usersState} emptyMessage="Nenhum usuário para este tenant." />
+                {loadingUsers ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Carregando usuários…</p>
+                ) : !users?.length ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Nenhum usuário para este tenant.</p>
+                ) : null}
               </div>
 
-              {usersState.status === "ready" ? (
+              {users?.length ? (
                 <div className="space-y-2">
-                  {usersState.data.map((user) => (
+                  {users.map((user) => (
                     <article key={user.userId} className="rounded-xl border p-3" style={{ borderColor: tokens.colors.border }}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
@@ -613,7 +421,8 @@ export function SuperadminDashboard({
                           type="button"
                           className="rounded-lg border px-2 py-1 text-xs"
                           style={{ borderColor: tokens.colors.border }}
-                          onClick={() => void toggleUserActive(user)}
+                          disabled={pendingAction === `toggleUser_${user.userId}`}
+                          onClick={() => void toggleUserActive(user.userId, user.isActive)}
                         >
                           {user.isActive ? "Desativar" : "Ativar"}
                         </button>
@@ -621,13 +430,10 @@ export function SuperadminDashboard({
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <input
-                          name={`reset_password_${user.userId}`}
                           className="min-w-[220px] rounded-lg border px-2 py-1 text-sm"
                           style={{ borderColor: tokens.colors.border }}
                           placeholder="Nova senha…"
                           type="password"
-                          aria-label={`Nova senha para ${user.username}`}
-                          autoComplete="new-password"
                           value={resetPasswords[user.userId] ?? ""}
                           onChange={(event) =>
                             setResetPasswords((previous) => ({
@@ -640,6 +446,7 @@ export function SuperadminDashboard({
                           type="button"
                           className="rounded-lg border px-2 py-1 text-xs"
                           style={{ borderColor: tokens.colors.border }}
+                          disabled={pendingAction === `resetPassword_${user.userId}`}
                           onClick={() => void resetUserPassword(user.userId)}
                         >
                           Reset senha
@@ -653,11 +460,9 @@ export function SuperadminDashboard({
               <form className="grid gap-2 border-t pt-4 md:grid-cols-2" style={{ borderColor: tokens.colors.border }} onSubmit={createUser}>
                 <input
                   required
-                  name="new_user_username"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="username…"
-                  aria-label="Username do novo usuário"
                   autoComplete="username"
                   spellCheck={false}
                   value={newUserUsername}
@@ -665,23 +470,19 @@ export function SuperadminDashboard({
                 />
                 <input
                   required
-                  name="new_user_full_name"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="Nome completo…"
-                  aria-label="Nome completo do novo usuário"
                   autoComplete="name"
                   value={newUserFullName}
                   onChange={(event) => setNewUserFullName(event.target.value)}
                 />
                 <input
                   required
-                  name="new_user_email"
                   type="email"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="email@dominio.com…"
-                  aria-label="Email do novo usuário"
                   autoComplete="email"
                   spellCheck={false}
                   value={newUserEmail}
@@ -689,17 +490,19 @@ export function SuperadminDashboard({
                 />
                 <input
                   required
-                  name="new_user_password"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="Senha inicial…"
                   type="password"
-                  aria-label="Senha inicial do novo usuário"
                   autoComplete="new-password"
                   value={newUserPassword}
                   onChange={(event) => setNewUserPassword(event.target.value)}
                 />
-                <button className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-2" type="submit">
+                <button
+                  className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-2 disabled:opacity-60"
+                  type="submit"
+                  disabled={pendingAction === "createUser"}
+                >
                   Criar usuário
                 </button>
               </form>
@@ -708,44 +511,46 @@ export function SuperadminDashboard({
             <section className={`${sectionClassName} space-y-4`} style={{ borderColor: tokens.colors.border, backgroundColor: tokens.colors.panel }}>
               <div>
                 <h2 className="text-lg font-semibold">WABA</h2>
-                <StatusMessage state={wabaState} emptyMessage="Nenhum mapeamento WABA para este tenant." />
+                {loadingWaba ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Carregando configuração WABA…</p>
+                ) : !wabaMappings?.length ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Nenhum mapeamento WABA para este tenant.</p>
+                ) : null}
               </div>
 
               <form className="grid gap-2 md:grid-cols-3" onSubmit={saveWaba}>
                 <input
                   required
-                  name="waba_phone_number_id"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="phone_number_id…"
-                  aria-label="WABA phone_number_id"
                   value={wabaPhoneNumberId}
                   onChange={(event) => setWabaPhoneNumberId(event.target.value)}
                 />
                 <input
                   required
-                  name="waba_account_id"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="waba_account_id…"
-                  aria-label="WABA account id"
                   value={wabaAccountId}
                   onChange={(event) => setWabaAccountId(event.target.value)}
                 />
                 <input
                   required
-                  name="waba_display_name"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="Nome de exibição…"
-                  aria-label="Nome de exibição da conta WABA"
                   value={wabaDisplayName}
                   onChange={(event) => setWabaDisplayName(event.target.value)}
                 />
-                <button className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-3" type="submit">
+                <button
+                  className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-3 disabled:opacity-60"
+                  type="submit"
+                  disabled={pendingAction === "saveWaba"}
+                >
                   Salvar WABA
                 </button>
               </form>
@@ -754,12 +559,16 @@ export function SuperadminDashboard({
             <section className={`${sectionClassName} space-y-4`} style={{ borderColor: tokens.colors.border, backgroundColor: tokens.colors.panel }}>
               <div>
                 <h2 className="text-lg font-semibold">Perfis de IA</h2>
-                <StatusMessage state={aiState} emptyMessage="Nenhum perfil de IA para este tenant." />
+                {loadingAi ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Carregando perfis de IA…</p>
+                ) : !aiProfiles?.length ? (
+                  <p style={{ color: tokens.colors.textMuted }}>Nenhum perfil de IA para este tenant.</p>
+                ) : null}
               </div>
 
-              {aiState.status === "ready" ? (
+              {aiProfiles?.length ? (
                 <div className="space-y-2">
-                  {aiState.data.map((profile) => (
+                  {aiProfiles.map((profile) => (
                     <article key={profile.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3" style={{ borderColor: tokens.colors.border }}>
                       <div>
                         <p className="font-medium">{profile.name}</p>
@@ -770,7 +579,7 @@ export function SuperadminDashboard({
                       <button
                         type="button"
                         onClick={() => void activateAiProfile(profile.id)}
-                        disabled={profile.isActive}
+                        disabled={profile.isActive || pendingAction === `activateAi_${profile.id}`}
                         className="rounded-lg border px-2 py-1 text-xs disabled:opacity-50"
                         style={{ borderColor: tokens.colors.border }}
                       >
@@ -784,49 +593,45 @@ export function SuperadminDashboard({
               <form className="grid gap-2 border-t pt-4 md:grid-cols-2" style={{ borderColor: tokens.colors.border }} onSubmit={createAiProfile}>
                 <input
                   required
-                  name="ai_profile_name"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="Nome do perfil…"
-                  aria-label="Nome do novo perfil IA"
                   value={newAiName}
                   onChange={(event) => setNewAiName(event.target.value)}
                 />
                 <input
                   required
-                  name="ai_credentials_ref"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="secret://tenant/openai_primary…"
-                  aria-label="CredentialsRef do perfil IA"
                   value={newAiCredentialsRef}
                   onChange={(event) => setNewAiCredentialsRef(event.target.value)}
                 />
                 <input
                   required
-                  name="ai_provider"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="provider…"
-                  aria-label="Provider do perfil IA"
                   value={newAiProvider}
                   onChange={(event) => setNewAiProvider(event.target.value)}
                 />
                 <input
                   required
-                  name="ai_model"
                   autoComplete="off"
                   className="rounded-xl border px-3 py-2 text-sm"
                   style={{ borderColor: tokens.colors.border }}
                   placeholder="model…"
-                  aria-label="Modelo do perfil IA"
                   value={newAiModel}
                   onChange={(event) => setNewAiModel(event.target.value)}
                 />
-                <button className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-2" type="submit">
+                <button
+                  className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 md:col-span-2 disabled:opacity-60"
+                  type="submit"
+                  disabled={pendingAction === "createAiProfile"}
+                >
                   Criar perfil IA
                 </button>
               </form>

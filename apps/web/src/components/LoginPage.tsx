@@ -1,11 +1,16 @@
 "use client";
 
+import { api } from "@repo/convex-backend";
 import { tokens } from "config";
+import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { parseBusinessErrorMessage } from "@/lib/business-error";
+import { storeSessionToken } from "@/lib/session-token";
 
 export function LoginPage() {
   const router = useRouter();
+  const login = useAction(api.auth.loginWithUsernamePassword);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,31 +22,15 @@ export function LoginPage() {
     setSubmitting(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
+      const session = await login({
+        username,
+        password,
       });
-
-      const payload = (await response.json().catch(() => null)) as {
-        redirectTo?: string;
-        error?: string;
-      } | null;
-
-      if (!response.ok) {
-        setError(payload?.error ?? "Não foi possível autenticar.");
-        return;
-      }
-
-      router.replace(payload?.redirectTo ?? "/superadmin");
+      storeSessionToken(session.sessionToken);
+      router.replace("/superadmin");
       router.refresh();
-    } catch {
-      setError("Erro de conexão. Tente novamente.");
+    } catch (requestError) {
+      setError(parseBusinessErrorMessage(requestError));
     } finally {
       setSubmitting(false);
     }
