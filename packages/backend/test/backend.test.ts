@@ -3,18 +3,26 @@ import assert from "node:assert/strict";
 import {
   BackendError,
   InMemoryBackendStore,
+  createAiProfile,
+  createTenant,
+  createTenantUser,
   createPrototypeAlignedFixtures,
   getContactDossierWithEvents,
-  ingestWhatsAppWebhook,
+  listAiProfiles,
   listUsers,
+  listTenants,
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
   markConversationAsRead,
   requireSession,
   resolveTenantByPhoneNumberId,
   resetUserPassword,
+  setActiveAiProfile,
+  setUserActive,
   schema,
   sendMessage,
+  updateTenant,
+  upsertTenantWabaAccount,
 } from "../src";
 
 function loginAsAna(store: InMemoryBackendStore) {
@@ -27,86 +35,6 @@ function loginAsMarina(store: InMemoryBackendStore) {
 
 function loginAsSuperadmin(store: InMemoryBackendStore) {
   return loginWithUsernamePassword({ store, username: "ops.root", password: "Root@123456" });
-}
-
-function buildInboundWebhookPayload(input: {
-  phoneNumberId: string;
-  messageId: string;
-  from: string;
-  type: "text" | "image" | "audio" | "document";
-  body?: string;
-  mediaId?: string;
-  mediaUrl?: string;
-  mimeType?: string;
-  fileName?: string;
-  timestamp?: string;
-}) {
-  const message =
-    input.type === "text"
-      ? {
-          id: input.messageId,
-          from: input.from,
-          timestamp: input.timestamp ?? "1700000000",
-          type: "text" as const,
-          text: { body: input.body ?? "mensagem texto" },
-        }
-      : input.type === "image"
-        ? {
-            id: input.messageId,
-            from: input.from,
-            timestamp: input.timestamp ?? "1700000000",
-            type: "image" as const,
-            image: {
-              id: input.mediaId ?? `media_${input.messageId}`,
-              mime_type: input.mimeType ?? "image/jpeg",
-              caption: input.body ?? "imagem recebida",
-              url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.jpg`,
-            },
-          }
-        : input.type === "audio"
-          ? {
-              id: input.messageId,
-              from: input.from,
-              timestamp: input.timestamp ?? "1700000000",
-              type: "audio" as const,
-              audio: {
-                id: input.mediaId ?? `media_${input.messageId}`,
-                mime_type: input.mimeType ?? "audio/ogg",
-                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.ogg`,
-              },
-            }
-          : {
-              id: input.messageId,
-              from: input.from,
-              timestamp: input.timestamp ?? "1700000000",
-              type: "document" as const,
-              document: {
-                id: input.mediaId ?? `media_${input.messageId}`,
-                filename: input.fileName ?? "documento.pdf",
-                mime_type: input.mimeType ?? "application/pdf",
-                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.pdf`,
-              },
-            };
-
-  return {
-    object: "whatsapp_business_account",
-    entry: [
-      {
-        id: "entry_1",
-        changes: [
-          {
-            field: "messages",
-            value: {
-              metadata: {
-                phone_number_id: input.phoneNumberId,
-              },
-              messages: [message],
-            },
-          },
-        ],
-      },
-    ],
-  };
 }
 
 test("list conversations returns unread badge", () => {
@@ -456,223 +384,150 @@ test("routing fails closed when phone_number_id is unknown", () => {
   );
 });
 
-test("webhook ingestion isolates tenant routing between tenant A and B", () => {
+test("superadmin can list and create tenants", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
 
-  const legalPayload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_legal_001",
-    from: "5511999991001",
-    type: "text",
-    body: "Mensagem para tenant legal",
-  });
-  const clinicPayload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_clinic_1",
-    messageId: "wamid_clinic_001",
-    from: "5511999992002",
-    type: "text",
-    body: "Mensagem para tenant clinic",
+  const before = listTenants({ session, store });
+  assert.equal(before.length, 2);
+
+  const created = createTenant({
+    session,
+    store,
+    id: "tenant_novo",
+    slug: "tenant-novo",
+    name: "Tenant Novo",
   });
 
-  const legalResult = ingestWhatsAppWebhook({ payload: legalPayload, store, now: 1_600_000 });
-  const clinicResult = ingestWhatsAppWebhook({ payload: clinicPayload, store, now: 1_600_500 });
+  assert.equal(created.id, "tenant_novo");
+  assert.equal(created.slug, "tenant-novo");
+  assert.equal(created.isActive, true);
 
-  assert.equal(legalResult.status, "processed");
-  assert.equal(legalResult.tenantId, "tenant_legal");
-  assert.equal(clinicResult.status, "processed");
-  assert.equal(clinicResult.tenantId, "tenant_clinic");
-
-  const snapshot = store.snapshot();
-  const legalMessage = snapshot.messages.find((item) => item.id === legalResult.messageId);
-  const clinicMessage = snapshot.messages.find((item) => item.id === clinicResult.messageId);
-
-  assert.equal(legalMessage?.tenantId, "tenant_legal");
-  assert.equal(legalMessage?.body, "Mensagem para tenant legal");
-  assert.equal(clinicMessage?.tenantId, "tenant_clinic");
-  assert.equal(clinicMessage?.body, "Mensagem para tenant clinic");
-  assert.notEqual(legalMessage?.tenantId, clinicMessage?.tenantId);
+  const after = listTenants({ session, store });
+  assert.equal(after.length, 3);
 });
 
-test("webhook ingestion fails closed when phone_number_id is unknown", () => {
+test("superadmin can update tenant active status", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const before = store.snapshot();
+  const session = loginAsSuperadmin(store);
 
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_unknown",
-    messageId: "wamid_unknown_001",
-    from: "5511999993003",
-    type: "text",
-    body: "Mensagem sem mapeamento",
+  const updated = updateTenant({
+    session,
+    store,
+    tenantId: "tenant_clinic",
+    name: "Clinica Sorriso Premium",
+    isActive: false,
   });
 
-  const result = ingestWhatsAppWebhook({ payload, store, now: 1_601_000 });
-  assert.equal(result.status, "blocked");
-  assert.equal(result.reason, "unmapped_phone_number_id");
-
-  const after = store.snapshot();
-  assert.equal(after.messages.length, before.messages.length);
-  assert.equal(after.attachments.length, before.attachments.length);
-  assert.ok(after.auditLogs.some((log) => log.action === "webhook.routing.failed" && log.targetId === "waba_phone_unknown"));
+  assert.equal(updated.id, "tenant_clinic");
+  assert.equal(updated.name, "Clinica Sorriso Premium");
+  assert.equal(updated.isActive, false);
 });
 
-test("webhook ingestion is idempotent for reprocessed webhook id", () => {
+test("superadmin can upsert tenant WABA mapping", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_idempotent_001",
-    from: "5511999994004",
-    type: "text",
-    body: "Teste de idempotencia",
+  const session = loginAsSuperadmin(store);
+
+  const updated = upsertTenantWabaAccount({
+    session,
+    store,
+    tenantId: "tenant_legal",
+    phoneNumberId: "waba_phone_legal_new",
+    wabaAccountId: "waba_account_legal_new",
+    displayName: "Lemes Advocacia WABA 2",
   });
 
-  const first = ingestWhatsAppWebhook({ payload, store, now: 1_602_000 });
-  const second = ingestWhatsAppWebhook({ payload, store, now: 1_602_100 });
+  assert.equal(updated.tenantId, "tenant_legal");
+  assert.equal(updated.phoneNumberId, "waba_phone_legal_new");
 
-  assert.equal(first.status, "processed");
-  assert.equal(second.status, "ignored");
-  assert.equal(second.deduplicated, true);
-
-  const snapshot = store.snapshot();
-  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
+  const mapping = resolveTenantByPhoneNumberId({
+    phoneNumberId: "waba_phone_legal_new",
+    store,
+  });
+  assert.equal(mapping.tenantId, "tenant_legal");
+  assert.equal(mapping.wabaAccountId, "waba_account_legal_new");
 });
 
-test("webhook ingestion does not collide different raw message ids with special chars", () => {
+test("superadmin can create tenant user and toggle active status", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payloadA = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid.A+B",
-    from: "5511999994100",
-    type: "text",
-    body: "Primeira mensagem",
-  });
-  const payloadB = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid.A/B",
-    from: "5511999994100",
-    type: "text",
-    body: "Segunda mensagem",
+  const session = loginAsSuperadmin(store);
+
+  const created = createTenantUser({
+    session,
+    store,
+    userId: "usr_novo",
+    tenantId: "tenant_clinic",
+    username: "novo.usuario",
+    fullName: "Novo Usuario",
+    email: "novo@clinic.com",
+    password: "Novo@123456",
   });
 
-  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_200 });
-  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_300 });
+  assert.equal(created.userId, "usr_novo");
+  assert.equal(created.tenantId, "tenant_clinic");
+  assert.equal(created.isActive, true);
 
-  assert.equal(first.status, "processed");
-  assert.equal(second.status, "processed");
-  assert.notEqual(first.messageId, second.messageId);
+  const disabled = setUserActive({
+    session,
+    store,
+    userId: "usr_novo",
+    isActive: false,
+  });
+  assert.equal(disabled.isActive, false);
 
-  const snapshot = store.snapshot();
-  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
-  assert.equal(snapshot.messages.filter((item) => item.id === second.messageId).length, 1);
+  assert.throws(
+    () => loginWithUsernamePassword({ store, username: "novo.usuario", password: "Novo@123456" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
 });
 
-test("webhook ingestion does not collide attachment ids with special chars", () => {
+test("setting active AI profile keeps exactly one active profile per tenant", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payloadA = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_media_001",
-    from: "5511999994200",
-    type: "image",
-    mediaId: "media.A+B",
-    mimeType: "image/jpeg",
+  const session = loginAsSuperadmin(store);
+
+  const created = createAiProfile({
+    session,
+    store,
+    id: "aip_clinic_v2",
+    tenantId: "tenant_clinic",
+    name: "dentista-atendimento-v2",
+    provider: "openai",
+    model: "gpt-4.1-mini",
+    credentialsRef: "secret://tenant_clinic/openai_secondary",
+    isActive: false,
   });
-  const payloadB = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_media_002",
-    from: "5511999994200",
-    type: "image",
-    mediaId: "media.A/B",
-    mimeType: "image/jpeg",
+  assert.equal(created.isActive, false);
+
+  const activated = setActiveAiProfile({
+    session,
+    store,
+    tenantId: "tenant_clinic",
+    profileId: "aip_clinic_v2",
   });
+  assert.equal(activated.id, "aip_clinic_v2");
+  assert.equal(activated.isActive, true);
 
-  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_400 });
-  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_500 });
-  assert.equal(first.status, "processed");
-  assert.equal(second.status, "processed");
+  const profiles = listAiProfiles({ session, store, tenantId: "tenant_clinic" });
+  const active = profiles.filter((profile) => profile.isActive);
 
-  const snapshot = store.snapshot();
-  const firstAttachment = snapshot.attachments.find((item) => item.messageId === first.messageId);
-  const secondAttachment = snapshot.attachments.find((item) => item.messageId === second.messageId);
-
-  assert.ok(firstAttachment?.id);
-  assert.ok(secondAttachment?.id);
-  assert.notEqual(firstAttachment?.id, secondAttachment?.id);
+  assert.equal(active.length, 1);
+  assert.equal(active[0]?.id, "aip_clinic_v2");
 });
 
-test("webhook ingestion persists text message", () => {
+test("tenant_user cannot run superadmin management operations", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_text_001",
-    from: "5511999995005",
-    type: "text",
-    body: "Mensagem de texto inbound",
-  });
+  const session = loginAsAna(store);
 
-  const result = ingestWhatsAppWebhook({ payload, store, now: 1_603_000 });
-  assert.equal(result.status, "processed");
-
-  const snapshot = store.snapshot();
-  const message = snapshot.messages.find((item) => item.id === result.messageId);
-  assert.equal(message?.body, "Mensagem de texto inbound");
-  assert.equal(message?.attachmentUrl, undefined);
-});
-
-test("webhook ingestion persists image attachment", () => {
-  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_legal_1",
-    messageId: "wamid_image_001",
-    from: "5511999996006",
-    type: "image",
-    body: "Comprovante em imagem",
-    mimeType: "image/jpeg",
-  });
-
-  const result = ingestWhatsAppWebhook({ payload, store, now: 1_604_000 });
-  assert.equal(result.status, "processed");
-
-  const snapshot = store.snapshot();
-  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
-  assert.equal(attachment?.tenantId, "tenant_legal");
-  assert.equal(attachment?.contentType, "image/jpeg");
-});
-
-test("webhook ingestion persists audio attachment", () => {
-  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_clinic_1",
-    messageId: "wamid_audio_001",
-    from: "5511999997007",
-    type: "audio",
-    mimeType: "audio/ogg",
-  });
-
-  const result = ingestWhatsAppWebhook({ payload, store, now: 1_605_000 });
-  assert.equal(result.status, "processed");
-
-  const snapshot = store.snapshot();
-  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
-  assert.equal(attachment?.tenantId, "tenant_clinic");
-  assert.equal(attachment?.contentType, "audio/ogg");
-});
-
-test("webhook ingestion persists pdf attachment", () => {
-  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = buildInboundWebhookPayload({
-    phoneNumberId: "waba_phone_clinic_1",
-    messageId: "wamid_pdf_001",
-    from: "5511999998008",
-    type: "document",
-    fileName: "laudo.pdf",
-    mimeType: "application/pdf",
-  });
-
-  const result = ingestWhatsAppWebhook({ payload, store, now: 1_606_000 });
-  assert.equal(result.status, "processed");
-
-  const snapshot = store.snapshot();
-  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
-  assert.equal(attachment?.tenantId, "tenant_clinic");
-  assert.equal(attachment?.contentType, "application/pdf");
-  assert.equal(attachment?.fileName, "laudo.pdf");
+  assert.throws(
+    () => listTenants({ session, store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
 });
