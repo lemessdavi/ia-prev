@@ -1,7 +1,7 @@
-import { assertTenantAccess, requirePersistedSession } from "./auth";
+import { assertTenantAccess, requirePersistedSession, requireSuperadmin } from "./auth";
 import { BackendError, logInfo } from "./errors";
 import { InMemoryBackendStore } from "./store";
-import type { ConversationListItem, Session, UserAccountSummary } from "./types";
+import type { AIProfile, ConversationListItem, Session, Tenant, TenantWabaAccount, UserAccountSummary } from "./types";
 import { assertId } from "./validators";
 
 export function listConversationsWithUnreadBadge(input: {
@@ -141,4 +141,52 @@ export function resolveTenantByPhoneNumberId(input: {
     wabaAccountId: mapping.wabaAccountId,
     displayName: mapping.displayName,
   };
+}
+
+export function listTenants(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+}): Tenant[] {
+  const session = requireSuperadmin({ session: input.session, store: input.store });
+  const tenants = input.store.listTenants();
+  logInfo("Tenants listed.", {
+    userId: session.userId,
+    tenantId: session.tenantId,
+    count: tenants.length,
+  });
+  return tenants;
+}
+
+export function listTenantWabaAccounts(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+  tenantId?: string;
+}): TenantWabaAccount[] {
+  const session = requireSuperadmin({ session: input.session, store: input.store });
+  const tenantId = input.tenantId ? assertId(input.tenantId, "tenantId") : undefined;
+  const mappings = input.store.listTenantWabaAccounts(tenantId);
+  logInfo("Tenant WABA accounts listed.", {
+    userId: session.userId,
+    tenantId: session.tenantId,
+    requestedTenantId: tenantId ?? "all",
+    count: mappings.length,
+  });
+  return mappings;
+}
+
+export function listAiProfiles(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+  tenantId: string;
+}): AIProfile[] {
+  const session = requireSuperadmin({ session: input.session, store: input.store });
+  const tenantId = assertId(input.tenantId, "tenantId");
+  const profiles = input.store.listAiProfiles(tenantId);
+  logInfo("AI profiles listed.", {
+    userId: session.userId,
+    tenantId: session.tenantId,
+    requestedTenantId: tenantId,
+    count: profiles.length,
+  });
+  return profiles;
 }

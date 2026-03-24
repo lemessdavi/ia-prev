@@ -3,17 +3,26 @@ import assert from "node:assert/strict";
 import {
   BackendError,
   InMemoryBackendStore,
+  createAiProfile,
+  createTenant,
+  createTenantUser,
   createPrototypeAlignedFixtures,
   getContactDossierWithEvents,
+  listAiProfiles,
   listUsers,
+  listTenants,
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
   markConversationAsRead,
   requireSession,
   resolveTenantByPhoneNumberId,
   resetUserPassword,
+  setActiveAiProfile,
+  setUserActive,
   schema,
   sendMessage,
+  updateTenant,
+  upsertTenantWabaAccount,
 } from "../src";
 
 function loginAsAna(store: InMemoryBackendStore) {
@@ -370,6 +379,154 @@ test("routing fails closed when phone_number_id is unknown", () => {
     (err: unknown) => {
       assert.ok(err instanceof BackendError);
       assert.equal(err.code, "NOT_FOUND");
+      return true;
+    },
+  );
+});
+
+test("superadmin can list and create tenants", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const before = listTenants({ session, store });
+  assert.equal(before.length, 2);
+
+  const created = createTenant({
+    session,
+    store,
+    id: "tenant_novo",
+    slug: "tenant-novo",
+    name: "Tenant Novo",
+  });
+
+  assert.equal(created.id, "tenant_novo");
+  assert.equal(created.slug, "tenant-novo");
+  assert.equal(created.isActive, true);
+
+  const after = listTenants({ session, store });
+  assert.equal(after.length, 3);
+});
+
+test("superadmin can update tenant active status", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const updated = updateTenant({
+    session,
+    store,
+    tenantId: "tenant_clinic",
+    name: "Clinica Sorriso Premium",
+    isActive: false,
+  });
+
+  assert.equal(updated.id, "tenant_clinic");
+  assert.equal(updated.name, "Clinica Sorriso Premium");
+  assert.equal(updated.isActive, false);
+});
+
+test("superadmin can upsert tenant WABA mapping", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const updated = upsertTenantWabaAccount({
+    session,
+    store,
+    tenantId: "tenant_legal",
+    phoneNumberId: "waba_phone_legal_new",
+    wabaAccountId: "waba_account_legal_new",
+    displayName: "Lemes Advocacia WABA 2",
+  });
+
+  assert.equal(updated.tenantId, "tenant_legal");
+  assert.equal(updated.phoneNumberId, "waba_phone_legal_new");
+
+  const mapping = resolveTenantByPhoneNumberId({
+    phoneNumberId: "waba_phone_legal_new",
+    store,
+  });
+  assert.equal(mapping.tenantId, "tenant_legal");
+  assert.equal(mapping.wabaAccountId, "waba_account_legal_new");
+});
+
+test("superadmin can create tenant user and toggle active status", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const created = createTenantUser({
+    session,
+    store,
+    userId: "usr_novo",
+    tenantId: "tenant_clinic",
+    username: "novo.usuario",
+    fullName: "Novo Usuario",
+    email: "novo@clinic.com",
+    password: "Novo@123456",
+  });
+
+  assert.equal(created.userId, "usr_novo");
+  assert.equal(created.tenantId, "tenant_clinic");
+  assert.equal(created.isActive, true);
+
+  const disabled = setUserActive({
+    session,
+    store,
+    userId: "usr_novo",
+    isActive: false,
+  });
+  assert.equal(disabled.isActive, false);
+
+  assert.throws(
+    () => loginWithUsernamePassword({ store, username: "novo.usuario", password: "Novo@123456" }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
+      return true;
+    },
+  );
+});
+
+test("setting active AI profile keeps exactly one active profile per tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsSuperadmin(store);
+
+  const created = createAiProfile({
+    session,
+    store,
+    id: "aip_clinic_v2",
+    tenantId: "tenant_clinic",
+    name: "dentista-atendimento-v2",
+    provider: "openai",
+    model: "gpt-4.1-mini",
+    credentialsRef: "secret://tenant_clinic/openai_secondary",
+    isActive: false,
+  });
+  assert.equal(created.isActive, false);
+
+  const activated = setActiveAiProfile({
+    session,
+    store,
+    tenantId: "tenant_clinic",
+    profileId: "aip_clinic_v2",
+  });
+  assert.equal(activated.id, "aip_clinic_v2");
+  assert.equal(activated.isActive, true);
+
+  const profiles = listAiProfiles({ session, store, tenantId: "tenant_clinic" });
+  const active = profiles.filter((profile) => profile.isActive);
+
+  assert.equal(active.length, 1);
+  assert.equal(active[0]?.id, "aip_clinic_v2");
+});
+
+test("tenant_user cannot run superadmin management operations", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  assert.throws(
+    () => listTenants({ session, store }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "FORBIDDEN");
       return true;
     },
   );
