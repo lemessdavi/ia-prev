@@ -28,20 +28,21 @@ Deliver web frontend phase 3 for superadmin, integrated with the existing auth/s
 - `/mock/legacy-chat`: old prototype screen (kept for reference)
 - `/app`: placeholder route for blocked tenant users
 
-### 3.2 BFF in apps/web
+### 3.2 Convex integration in web/mobile
 
-Because the current repository has backend domain contracts but no HTTP API server, add minimal BFF routes in `apps/web`:
+Web and mobile consume backend capabilities only through Convex:
 
-- auth routes: login, logout, current session
-- superadmin routes: tenants, users, WABA mapping, AI profiles
+- typed API contract from `@repo/convex-backend`
+- runtime client hooks from `convex/react`
+- auth and superadmin operations implemented in Convex queries/mutations/actions
 
-BFF calls `packages/backend` directly and enforces existing auth/session guards.
+No runtime path should call `packages/backend` directly from BFF or route handlers.
 
 ### 3.3 Session model
 
 - Cookie stores serialized authenticated session payload: `sessionId`, `userId`, `tenantId`, `role`, `createdAt`.
 - Cookie flags: `HttpOnly`, `SameSite=Lax`, `Secure` in production.
-- All protected operations validate persisted session via backend auth guards.
+- All protected operations validate persisted session via Convex auth/session guards.
 
 ## 4. Superadmin UI Scope
 
@@ -56,7 +57,7 @@ Each module must render explicit: loading, empty, error, forbidden states.
 
 ## 5. Error Handling
 
-- Map backend errors to HTTP codes in BFF (`UNAUTHENTICATED`, `FORBIDDEN`, `BAD_REQUEST`, `NOT_FOUND`).
+- Map Convex errors to UI states (`UNAUTHENTICATED`, `FORBIDDEN`, `BAD_REQUEST`, `NOT_FOUND`).
 - UI surfaces readable validation errors.
 - Forbidden access always shows clear 403 state and CTA `/app`.
 
@@ -68,10 +69,11 @@ Critical behavior-first tests:
 2. `/superadmin` protection rules
 3. Invalid login returns error and does not authenticate
 
-Additional tests for new backend admin operations and invariants (including exactly one active AI profile per tenant).
+Additional tests for new Convex admin operations and invariants (including exactly one active AI profile per tenant).
 
 ## 7. Non-goals
 
 - No backend replatforming or external persistent database in this card.
+- No reintroduction of direct `packages/backend` runtime dependencies.
 - No new tenant-user operation screens beyond placeholder `/app`.
 - No removal of legacy mock (only route move).
