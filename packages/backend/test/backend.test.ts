@@ -536,6 +536,68 @@ test("webhook ingestion is idempotent for reprocessed webhook id", () => {
   assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
 });
 
+test("webhook ingestion does not collide different raw message ids with special chars", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payloadA = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid.A+B",
+    from: "5511999994100",
+    type: "text",
+    body: "Primeira mensagem",
+  });
+  const payloadB = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid.A/B",
+    from: "5511999994100",
+    type: "text",
+    body: "Segunda mensagem",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_200 });
+  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_300 });
+
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "processed");
+  assert.notEqual(first.messageId, second.messageId);
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
+  assert.equal(snapshot.messages.filter((item) => item.id === second.messageId).length, 1);
+});
+
+test("webhook ingestion does not collide attachment ids with special chars", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payloadA = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_media_001",
+    from: "5511999994200",
+    type: "image",
+    mediaId: "media.A+B",
+    mimeType: "image/jpeg",
+  });
+  const payloadB = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_media_002",
+    from: "5511999994200",
+    type: "image",
+    mediaId: "media.A/B",
+    mimeType: "image/jpeg",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_400 });
+  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_500 });
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "processed");
+
+  const snapshot = store.snapshot();
+  const firstAttachment = snapshot.attachments.find((item) => item.messageId === first.messageId);
+  const secondAttachment = snapshot.attachments.find((item) => item.messageId === second.messageId);
+
+  assert.ok(firstAttachment?.id);
+  assert.ok(secondAttachment?.id);
+  assert.notEqual(firstAttachment?.id, secondAttachment?.id);
+});
+
 test("webhook ingestion persists text message", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   const payload = buildInboundWebhookPayload({

@@ -329,15 +329,19 @@ function upsertConversation(input: {
 }
 
 function toStoredMessageId(externalMessageId: string): string {
-  return `wa_${sanitizeToken(externalMessageId)}`;
+  return `wa_${encodeStableToken(externalMessageId)}`;
 }
 
 function toStoredAttachmentId(mediaId: string): string {
-  return `att_wa_${sanitizeToken(mediaId)}`;
+  return `att_wa_${encodeStableToken(mediaId)}`;
 }
 
 function buildAuditId(action: string, target: string, now: number): string {
-  return `audit_${sanitizeToken(action)}_${sanitizeToken(target)}_${now}`;
+  return `audit_${encodeStableToken(action)}_${encodeStableToken(target)}_${now}`;
+}
+
+function encodeStableToken(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
 }
 
 function sanitizeToken(value: string): string {
