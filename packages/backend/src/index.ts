@@ -3,11 +3,21 @@ export { InMemoryBackendStore } from "./store";
 export { createPrototypeAlignedFixtures } from "./fixtures";
 export {
   listConversationsWithUnreadBadge,
+  listConversationsForInbox,
+  getTenantWorkspaceSummary,
+  getConversationThread,
+  exportConversationDossier,
   getContactDossierWithEvents,
   listUsers,
   resolveTenantByPhoneNumberId,
 } from "./queries";
-export { sendMessage, markConversationAsRead, resetUserPassword } from "./mutations";
+export {
+  sendMessage,
+  markConversationAsRead,
+  resetUserPassword,
+  takeConversationHandoff,
+  closeConversationWithReason,
+} from "./mutations";
 export {
   requireSession,
   requirePersistedSession,
@@ -17,3 +27,4 @@ export {
 } from "./auth";
 export { BackendError } from "./errors";
 export { ingestWhatsAppWebhook } from "./webhookIngestion";
+export type { Session } from "./types";

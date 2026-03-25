@@ -29,6 +29,9 @@
       "config": [
         "../../packages/config/src/index.ts"
       ],
+      "@repo/backend": [
+        "../../packages/backend/src/index.ts"
+      ],
       "utils": [
         "../../packages/utils/src/index.ts"
       ]

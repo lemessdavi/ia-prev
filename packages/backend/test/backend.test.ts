@@ -2,16 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   BackendError,
+  closeConversationWithReason,
+  exportConversationDossier,
   InMemoryBackendStore,
   createPrototypeAlignedFixtures,
   getContactDossierWithEvents,
+  getConversationThread,
+  getTenantWorkspaceSummary,
   ingestWhatsAppWebhook,
+  listConversationsForInbox,
   listUsers,
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
   markConversationAsRead,
   requireSession,
   resolveTenantByPhoneNumberId,
+  takeConversationHandoff,
   resetUserPassword,
   schema,
   sendMessage,
@@ -27,6 +33,10 @@ function loginAsMarina(store: InMemoryBackendStore) {
 
 function loginAsSuperadmin(store: InMemoryBackendStore) {
   return loginWithUsernamePassword({ store, username: "ops.root", password: "Root@123456" });
+}
+
+function loginAsBruna(store: InMemoryBackendStore) {
+  return loginWithUsernamePassword({ store, username: "bruna.alves", password: "Bruna@123456" });
 }
 
 function buildInboundWebhookPayload(input: {
@@ -675,4 +685,152 @@ test("webhook ingestion persists pdf attachment", () => {
   assert.equal(attachment?.tenantId, "tenant_clinic");
   assert.equal(attachment?.contentType, "application/pdf");
   assert.equal(attachment?.fileName, "laudo.pdf");
+});
+
+test("tenant workspace summary resolves tenant, waba and active ai profile for logged user", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const summary = getTenantWorkspaceSummary({ session, store });
+
+  assert.equal(summary.tenantId, "tenant_legal");
+  assert.equal(summary.tenantName, "Lemes Advocacia");
+  assert.equal(summary.wabaLabel, "Lemes Advocacia WABA");
+  assert.equal(summary.activeAiProfileName, "previdencia-triagem-v1");
+  assert.equal(summary.operator.userId, "usr_ana");
+});
+
+test("inbox list supports status filter and text search within tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const allRows = listConversationsForInbox({ session, store });
+  assert.equal(allRows.length, 2);
+
+  const triageRows = listConversationsForInbox({
+    session,
+    store,
+    status: "EM_TRIAGEM",
+  });
+  assert.equal(triageRows.length, 1);
+  assert.equal(triageRows[0]?.conversationId, "conv_ana_marina");
+
+  const searchRows = listConversationsForInbox({
+    session,
+    store,
+    search: "caio",
+  });
+  assert.equal(searchRows.length, 1);
+  assert.equal(searchRows[0]?.conversationId, "conv_ana_caio");
+});
+
+test("conversation thread returns messages and attachments while preserving tenant isolation", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const legalSession = loginAsAna(store);
+
+  const thread = getConversationThread({
+    session: legalSession,
+    store,
+    conversationId: "conv_ana_caio",
+  });
+
+  assert.equal(thread.conversationId, "conv_ana_caio");
+  assert.equal(thread.messages.length, 3);
+  assert.ok(thread.messages.some((message) => message.attachment?.fileName === "laudo-medico.pdf"));
+
+  assert.throws(
+    () =>
+      getConversationThread({
+        session: loginAsBruna(store),
+        store,
+        conversationId: "conv_ana_caio",
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "NOT_FOUND");
+      return true;
+    },
+  );
+});
+
+test("handoff mutation marks conversation in human attendance and stores event", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const result = takeConversationHandoff({
+    session,
+    store,
+    conversationId: "conv_ana_caio",
+    now: 1_900_000,
+  });
+
+  assert.equal(result.conversationId, "conv_ana_caio");
+  assert.equal(result.conversationStatus, "EM_ATENDIMENTO_HUMANO");
+
+  const snapshot = store.snapshot();
+  const handoff = snapshot.handoffEvents.find((event) => event.id === result.handoffEventId);
+  const conversation = snapshot.conversations.find((item) => item.id === "conv_ana_caio");
+  assert.equal(handoff?.to, "human");
+  assert.equal(handoff?.performedByUserId, "usr_ana");
+  assert.equal(conversation?.conversationStatus, "EM_ATENDIMENTO_HUMANO");
+});
+
+test("closing case requires reason and writes conversation/audit updates", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const result = closeConversationWithReason({
+    session,
+    store,
+    conversationId: "conv_ana_caio",
+    reason: "Documentacao validada e caso concluido",
+    now: 1_910_000,
+  });
+
+  assert.equal(result.conversationId, "conv_ana_caio");
+  assert.equal(result.conversationStatus, "FECHADO");
+  assert.equal(result.closureReason, "Documentacao validada e caso concluido");
+
+  const snapshot = store.snapshot();
+  const conversation = snapshot.conversations.find((item) => item.id === "conv_ana_caio");
+  assert.equal(conversation?.conversationStatus, "FECHADO");
+  assert.equal(conversation?.closureReason, "Documentacao validada e caso concluido");
+  assert.ok(
+    snapshot.auditLogs.some(
+      (item) => item.action === "conversation.closed" && item.targetId === "conv_ana_caio" && item.tenantId === "tenant_legal",
+    ),
+  );
+});
+
+test("dossier export returns operational bundle and blocks cross-tenant access", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const legalSession = loginAsAna(store);
+
+  const exported = exportConversationDossier({
+    session: legalSession,
+    store,
+    conversationId: "conv_ana_caio",
+    now: 1_920_000,
+  });
+
+  assert.equal(exported.conversationId, "conv_ana_caio");
+  assert.equal(exported.tenantId, "tenant_legal");
+  assert.equal(exported.dossier.contactId, "usr_caio");
+  assert.ok(exported.messages.length >= 1);
+  assert.ok(exported.attachments.length >= 1);
+  assert.ok(exported.generatedAtIso.includes("T"));
+
+  assert.throws(
+    () =>
+      exportConversationDossier({
+        session: loginAsBruna(store),
+        store,
+        conversationId: "conv_ana_caio",
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "NOT_FOUND");
+      return true;
+    },
+  );
 });

@@ -88,6 +88,7 @@ export interface Conversation {
   participantIds: Id[];
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
+  closureReason?: string;
   title: string;
   lastMessagePreview: string;
   lastMessageAt: number;
@@ -182,4 +183,70 @@ export interface ConversationListItem {
   lastMessageAt: number;
   lastActivityAt: number;
   unreadCount: number;
+}
+
+export interface TenantWorkspaceSummary {
+  tenantId: TenantId;
+  tenantName: string;
+  wabaLabel: string;
+  activeAiProfileName: string;
+  operator: {
+    userId: Id;
+    fullName: string;
+    username: string;
+  };
+}
+
+export interface ConversationInboxItem {
+  conversationId: Id;
+  title: string;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
+  closureReason?: string;
+  lastMessagePreview: string;
+  lastMessageAt: number;
+  lastActivityAt: number;
+  unreadCount: number;
+  hasAttachment: boolean;
+  hasHumanHandoff: boolean;
+}
+
+export interface ConversationThreadMessageAttachment {
+  id: Id;
+  fileName: string;
+  contentType: string;
+  url: string;
+}
+
+export interface ConversationThreadMessage {
+  id: Id;
+  senderId: Id;
+  body: string;
+  createdAt: number;
+  readBy: Id[];
+  attachment?: ConversationThreadMessageAttachment;
+}
+
+export interface ConversationThreadPayload {
+  conversationId: Id;
+  title: string;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
+  closureReason?: string;
+  participantIds: Id[];
+  messages: ConversationThreadMessage[];
+  handoffEvents: HandoffEvent[];
+}
+
+export interface ConversationDossierExport {
+  tenantId: TenantId;
+  conversationId: Id;
+  contactId: Id;
+  generatedAtIso: string;
+  dossier: Dossier;
+  recentEvents: DossierEvent[];
+  messages: Message[];
+  attachments: Attachment[];
+  handoffEvents: HandoffEvent[];
+  closureReason?: string;
 }

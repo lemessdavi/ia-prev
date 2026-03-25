@@ -1,12 +1,16 @@
 import type {
+  AIProfile,
   Attachment,
   AuditLog,
   Conversation,
   Database,
   DossierEvent,
+  HandoffEvent,
   Message,
   StoredSession,
+  Tenant,
   TenantId,
+  TenantWabaAccount,
   User,
   UserAccount,
 } from "./types";
@@ -73,6 +77,18 @@ export class InMemoryBackendStore {
     return this.state.tenantWabaAccounts.find((mapping) => mapping.phoneNumberId === phoneNumberId);
   }
 
+  findTenantWabaByTenantId(tenantId: TenantId): TenantWabaAccount | undefined {
+    return this.state.tenantWabaAccounts.find((mapping) => mapping.tenantId === tenantId);
+  }
+
+  findTenantById(tenantId: TenantId): Tenant | undefined {
+    return this.state.tenants.find((tenant) => tenant.id === tenantId);
+  }
+
+  findActiveAIProfileByTenantId(tenantId: TenantId): AIProfile | undefined {
+    return this.state.aiProfiles.find((profile) => profile.tenantId === tenantId && profile.isActive);
+  }
+
   findConversation(conversationId: string, tenantId: TenantId): Conversation | undefined {
     return this.state.conversations.find((item) => item.id === conversationId && item.tenantId === tenantId);
   }
@@ -99,6 +115,24 @@ export class InMemoryBackendStore {
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }
 
+  listConversationsByTenant(tenantId: TenantId): Conversation[] {
+    return this.state.conversations
+      .filter((conversation) => conversation.tenantId === tenantId)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  }
+
+  listAttachments(conversationId: string, tenantId: TenantId): Attachment[] {
+    return this.state.attachments
+      .filter((attachment) => attachment.conversationId === conversationId && attachment.tenantId === tenantId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  listHandoffEvents(conversationId: string, tenantId: TenantId): HandoffEvent[] {
+    return this.state.handoffEvents
+      .filter((event) => event.conversationId === conversationId && event.tenantId === tenantId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
   listDossierEvents(contactId: string, tenantId: TenantId): DossierEvent[] {
     return this.state.dossierEvents
       .filter((event) => event.contactId === contactId && event.tenantId === tenantId)
@@ -119,6 +153,10 @@ export class InMemoryBackendStore {
 
   insertAuditLog(auditLog: AuditLog): void {
     this.state.auditLogs.push(auditLog);
+  }
+
+  insertHandoffEvent(event: HandoffEvent): void {
+    this.state.handoffEvents.push(event);
   }
 
   updateConversation(conversationId: string, tenantId: TenantId, patch: Partial<Conversation>): void {

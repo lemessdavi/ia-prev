@@ -18,7 +18,7 @@ export const schema = {
     indexes: ["by_user", "by_tenant", "by_role"],
   },
   conversations: {
-    indexes: ["by_tenant", "by_tenant_participant", "by_tenant_last_activity"],
+    indexes: ["by_tenant", "by_tenant_participant", "by_tenant_last_activity", "by_tenant_status"],
   },
   messages: {
     indexes: ["by_tenant_conversation", "by_tenant_conversation_created_at"],

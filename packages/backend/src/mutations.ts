@@ -3,7 +3,7 @@ import { BackendError, logInfo } from "./errors";
 import { hashPassword } from "./security";
 import { InMemoryBackendStore } from "./store";
 import type { Session } from "./types";
-import { assertAttachmentUrl, assertId, assertMessageBody, assertPassword } from "./validators";
+import { assertAttachmentUrl, assertClosureReason, assertId, assertMessageBody, assertPassword } from "./validators";
 
 export function sendMessage(input: {
   session?: Session | null;
@@ -125,5 +125,107 @@ export function resetUserPassword(input: {
     userId: user.id,
     tenantId: user.tenantId,
     revokedSessionCount,
+  };
+}
+
+export function takeConversationHandoff(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+  conversationId: string;
+  now?: number;
+}) {
+  const session = requirePersistedSession({ session: input.session, store: input.store });
+  const conversationId = assertId(input.conversationId, "conversationId");
+  const now = input.now ?? Date.now();
+  const conversation = input.store.findConversation(conversationId, session.tenantId);
+  if (!conversation) {
+    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+      conversationId,
+      tenantId: session.tenantId,
+    });
+  }
+  if (conversation.conversationStatus === "FECHADO") {
+    throw new BackendError("Conversation is already closed.", "BAD_REQUEST", {
+      conversationId,
+      tenantId: session.tenantId,
+    });
+  }
+
+  const participantIds = conversation.participantIds.includes(session.userId)
+    ? conversation.participantIds
+    : [...conversation.participantIds, session.userId];
+
+  input.store.updateConversation(conversationId, session.tenantId, {
+    participantIds,
+    conversationStatus: "EM_ATENDIMENTO_HUMANO",
+    lastActivityAt: now,
+  });
+
+  const handoffEventId = `hand_${conversationId}_${now}`;
+  input.store.insertHandoffEvent({
+    id: handoffEventId,
+    tenantId: session.tenantId,
+    conversationId,
+    from: "assistant",
+    to: "human",
+    performedByUserId: session.userId,
+    createdAt: now,
+  });
+  input.store.insertAuditLog({
+    id: `audit_handoff_${conversationId}_${now}`,
+    tenantId: session.tenantId,
+    actorUserId: session.userId,
+    action: "conversation.handoff.taken",
+    targetType: "conversation",
+    targetId: conversationId,
+    createdAt: now,
+  });
+
+  return {
+    conversationId,
+    conversationStatus: "EM_ATENDIMENTO_HUMANO" as const,
+    handoffEventId,
+  };
+}
+
+export function closeConversationWithReason(input: {
+  session?: Session | null;
+  store: InMemoryBackendStore;
+  conversationId: string;
+  reason: string;
+  now?: number;
+}) {
+  const session = requirePersistedSession({ session: input.session, store: input.store });
+  const conversationId = assertId(input.conversationId, "conversationId");
+  const reason = assertClosureReason(input.reason);
+  const now = input.now ?? Date.now();
+  const conversation = input.store.findConversation(conversationId, session.tenantId);
+  if (!conversation) {
+    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+      conversationId,
+      tenantId: session.tenantId,
+    });
+  }
+
+  input.store.updateConversation(conversationId, session.tenantId, {
+    conversationStatus: "FECHADO",
+    closureReason: reason,
+    lastActivityAt: now,
+  });
+
+  input.store.insertAuditLog({
+    id: `audit_closed_${conversationId}_${now}`,
+    tenantId: session.tenantId,
+    actorUserId: session.userId,
+    action: "conversation.closed",
+    targetType: "conversation",
+    targetId: conversationId,
+    createdAt: now,
+  });
+
+  return {
+    conversationId,
+    conversationStatus: "FECHADO" as const,
+    closureReason: reason,
   };
 }
