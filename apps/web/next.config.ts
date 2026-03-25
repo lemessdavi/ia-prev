@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     'react-native-web',
     'react-native-css-interop',
     'nativewind',
+    '@repo/convex-backend',
+    'config',
+    'utils',
   ],
   webpack: (config) => {
     config.resolve.alias = {

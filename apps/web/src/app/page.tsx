@@ -12,7 +12,8 @@ import {
   type TenantWorkspaceSummaryDTO,
 } from "utils";
 
-const api = createBackendApiClient("/api/backend");
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim() ?? "";
+const api = createBackendApiClient(convexUrl);
 const TOKEN_STORAGE_KEY = "iap.session.token";
 
 const statusStyles: Record<ConversationStatus, { backgroundColor: string; color: string }> = {
@@ -62,6 +63,19 @@ export default function Home() {
     [conversations, selectedConversationId],
   );
   const isAuthenticated = workspace !== null;
+
+  if (!convexUrl) {
+    return (
+      <main className="min-h-screen bg-zinc-50 p-8">
+        <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-6">
+          <h1 className="text-2xl font-semibold">Convex URL nao configurada</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            Defina <code>NEXT_PUBLIC_CONVEX_URL</code> para conectar o frontend ao backend Convex.
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   const clearSession = useCallback(() => {
     api.setSessionToken(null);

@@ -17,6 +17,23 @@ pnpm install
 pnpm dev              # Start all apps
 ```
 
+## Convex Setup
+
+This repository now runs web/mobile against Convex as the primary runtime.
+
+1. Configure backend env:
+   - Copy `packages/convex-backend/.env.example` and set `CONVEX_DEPLOYMENT`.
+2. Configure frontend envs:
+   - Web: copy `apps/web/.env.example` and set `NEXT_PUBLIC_CONVEX_URL`.
+   - Mobile: copy `apps/mobile/.env.example` and set `EXPO_PUBLIC_CONVEX_URL`.
+3. Run Convex + apps together:
+   - `pnpm dev`
+
+Useful commands:
+- `pnpm convex:dev`
+- `pnpm convex:codegen`
+- `pnpm convex:seed`
+
 Run individually:
 
 ```bash

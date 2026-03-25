@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@repo/backend": "workspace:*",
+    "@repo/convex-backend": "workspace:*",
+    "convex": "^1.34.0",
     "next": "16.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

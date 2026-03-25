@@ -29,8 +29,8 @@
       "config": [
         "../../packages/config/src/index.ts"
       ],
-      "@repo/backend": [
-        "../../packages/backend/src/index.ts"
+      "@repo/convex-backend": [
+        "../../packages/convex-backend/src/index.ts"
       ],
       "utils": [
         "../../packages/utils/src/index.ts"
@@ -45,8 +45,7 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -30,7 +30,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           IA Prev Operador
         </Text>
         <Text style={{ color: tokens.colors.textMuted }}>
-          Login tenant-aware. Ajuste `EXPO_PUBLIC_BACKEND_URL` para apontar para seu backend.
+          Login tenant-aware. Ajuste `EXPO_PUBLIC_CONVEX_URL` para apontar para seu backend Convex.
         </Text>
         <View>
           <Text style={{ marginBottom: 6 }}>Usuario</Text>
