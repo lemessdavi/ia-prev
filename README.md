@@ -33,6 +33,7 @@ Useful commands:
 - `pnpm convex:dev`
 - `pnpm convex:codegen`
 - `pnpm convex:seed`
+- `pnpm test:e2e`
 
 Run individually:
 

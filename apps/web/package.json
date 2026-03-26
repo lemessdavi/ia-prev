@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "dev:e2e": "next dev --webpack --port 3100",
     "build": "next build --webpack",
     "start": "next start --webpack",
     "lint": "eslint",

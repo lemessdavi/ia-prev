@@ -10,6 +10,10 @@ dist
 # Turbo
 .turbo
 
+# Playwright
+playwright-report
+test-results
+
 # Claude local
 .claude
 CLAUDE.md

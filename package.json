@@ -13,6 +13,10 @@
     "typecheck": "pnpm convex:codegen:if-configured && turbo typecheck",
     "compile": "pnpm run typecheck",
     "test": "pnpm --filter @repo/convex-backend test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed --project=chromium-desktop --workers=1",
+    "test:e2e:debug": "PWDEBUG=1 playwright test --project=chromium-desktop --workers=1",
+    "test:e2e:ui": "playwright test --ui",
     "convex:dev": "pnpm --filter @repo/convex-backend dev",
     "convex:codegen:if-configured": "bash ./scripts/convex-codegen-if-configured.sh",
     "convex:codegen": "pnpm --filter @repo/convex-backend codegen",
@@ -25,6 +29,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.29.3",
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "concurrently": "^9.2.1",
     "turbo": "^2.7.2"
   },
