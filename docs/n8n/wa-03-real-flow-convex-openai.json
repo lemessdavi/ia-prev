@@ -1,0 +1,209 @@
+{
+  "name": "WA - 03 Real flow Convex + OpenAI",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": []
+        }
+      },
+      "id": "2dc83410-ef8f-4cba-9f6f-8e2cc9b4d8ad",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const message = $json.messages?.[0] ?? {};\nconst contact = $json.contacts?.[0] ?? {};\nconst phoneNumberId = $json.metadata?.phone_number_id;\nconst contactWaId = message.from;\nif (!phoneNumberId || !contactWaId) {\n  throw new Error('Payload sem metadata.phone_number_id ou messages[0].from');\n}\nconst timestampRaw = Number(message.timestamp ?? Math.floor(Date.now() / 1000));\nconst messageTimestampMs = Number.isFinite(timestampRaw)\n  ? Math.floor(timestampRaw > 10_000_000_000 ? timestampRaw : timestampRaw * 1000)\n  : Date.now();\nconst messageType = message.type ?? 'text';\nconst body = message.text?.body ?? message.button?.text ?? message.interactive?.button_reply?.title ?? '';\nconst attachments = [];\nfor (const mediaType of ['image', 'document', 'audio', 'video', 'sticker']) {\n  const media = message[mediaType];\n  if (!media?.id) continue;\n  attachments.push({\n    mediaType,\n    mediaId: media.id,\n    contentType: media.mime_type,\n    fileName: media.filename\n  });\n}\nreturn [{\n  json: {\n    phoneNumberId,\n    contactWaId,\n    contactDisplayName: contact.profile?.name,\n    externalMessageId: message.id,\n    messageType,\n    body,\n    messageTimestampMs,\n    attachments\n  }\n}];"
+      },
+      "id": "f8a11f95-e24e-42b1-bd32-958c1ad0e5eb",
+      "name": "Normalize Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL + '/integrations/n8n/whatsapp/inbound' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-integration-secret",
+              "value": "={{ $env.N8N_INTEGRATION_SECRET }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      },
+      "id": "8b7935f5-06fd-4836-bd35-5f58d94f3521",
+      "name": "Persist Inbound (Convex)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $env.OPENAI_MODEL || 'gpt-4.1-mini', temperature: 0.3, messages: [ { role: 'system', content: 'Voce e um assistente de WhatsApp para triagem inicial. Responda em portugues do Brasil, em no maximo 3 frases, pedindo proximo dado objetivo quando faltar contexto.' }, { role: 'user', content: $('Normalize Inbound').item.json.body || '[mensagem sem texto]' } ] } }}"
+      },
+      "id": "f07785fd-c8cb-4e8e-a8a2-f44eb4e94a85",
+      "name": "OpenAI - Generate Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $('Normalize Inbound').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $('Normalize Inbound').item.json.contactWaId }}",
+        "messageType": "text",
+        "textBody": "={{ $json.choices?.[0]?.message?.content || 'Recebi sua mensagem. Ja estou processando sua solicitacao.' }}"
+      },
+      "id": "8b6f5efa-68af-4a66-a4d5-2e77db8221f3",
+      "name": "WhatsApp Business Cloud",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1330,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL + '/integrations/n8n/whatsapp/outbound' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-n8n-integration-secret",
+              "value": "={{ $env.N8N_INTEGRATION_SECRET }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { phoneNumberId: $('Normalize Inbound').item.json.phoneNumberId, conversationId: $('Persist Inbound (Convex)').item.json.conversationId, externalMessageId: $json.messages?.[0]?.id, body: $('OpenAI - Generate Reply').item.json.choices?.[0]?.message?.content || 'Resposta enviada pelo assistente.' } }}"
+      },
+      "id": "f4da7691-cd5b-4f67-a823-d1d607d88f4a",
+      "name": "Persist Outbound (Convex)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Inbound": {
+      "main": [
+        [
+          {
+            "node": "Persist Inbound (Convex)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Inbound (Convex)": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Generate Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Generate Reply": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Business Cloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Business Cloud": {
+      "main": [
+        [
+          {
+            "node": "Persist Outbound (Convex)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

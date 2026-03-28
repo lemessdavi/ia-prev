@@ -1,0 +1,62 @@
+{
+  "name": "WA - 02 Inbound trigger and auto-reply",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": []
+        }
+      },
+      "id": "f01a7026-a1e2-40fd-b613-cd225f5cfa1e",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $json[\"metadata\"][\"phone_number_id\"] }}",
+        "recipientPhoneNumber": "={{ $json[\"messages\"][0][\"from\"] }}",
+        "messageType": "text",
+        "textBody": "Recebi sua mensagem. Em instantes um atendente responde."
+      },
+      "id": "8dff4cc1-df0e-479f-98d4-9899b8cebbd0",
+      "name": "WhatsApp Business Cloud",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Business Cloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

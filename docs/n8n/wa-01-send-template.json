@@ -1,0 +1,54 @@
+{
+  "name": "WA - 01 Send hello_world template",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8a7f70fc-807f-4d9f-bf34-1e9a9b1df2f7",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendTemplate",
+        "phoneNumberId": "1070020079525326",
+        "recipientPhoneNumber": "554891313199",
+        "template": "hello_world|en_US"
+      },
+      "id": "7e4e7a35-a04f-4f80-af40-8fec95f532b8",
+      "name": "WhatsApp Business Cloud",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Business Cloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,0 +1,16 @@
+Execute the project completion loop using these files as source of truth:
+- docs/codex/Prompt.md
+- docs/codex/Plan.md
+- docs/codex/Implement.md
+- docs/codex/Documentation.md
+
+Rules:
+1) Continue from current milestone in docs/codex/Documentation.md.
+2) Keep scope limited to agreed phases (skip phase 6 and 7).
+3) Deliver 99% complete project with AI path in live or mock mode.
+4) If live AI credentials are unavailable, implement/use mock mode and continue.
+5) Update docs/codex/Documentation.md after each milestone step.
+6) Run validations for the touched milestone before moving forward.
+7) Stop only when done criteria in docs/codex/Prompt.md are satisfied.
+
+Return only the schema-compliant JSON progress report.
