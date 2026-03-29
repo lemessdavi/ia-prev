@@ -1,5 +1,5 @@
 {
-  "name": "WA - 03 Real flow Convex + OpenAI",
+  "name": "WA - 03 Real E2E (Convex + OpenAI live)",
   "nodes": [
     {
       "parameters": {
@@ -97,7 +97,7 @@
         "resource": "message",
         "operation": "send",
         "phoneNumberId": "={{ $('Normalize Inbound').item.json.phoneNumberId }}",
-        "recipientPhoneNumber": "={{ $vars.TEST_RECIPIENT_PHONE || $('Normalize Inbound').item.json.contactWaId }}",
+        "recipientPhoneNumber": "={{ $('Normalize Inbound').item.json.contactWaId }}",
         "messageType": "text",
         "textBody": "={{ $json.choices?.[0]?.message?.content || 'Recebi sua mensagem. Ja estou processando sua solicitacao.' }}"
       },

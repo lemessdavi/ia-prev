@@ -1,5 +1,5 @@
 {
-  "name": "WA - 03 Real flow Convex + OpenAI",
+  "name": "WA - 04 AI mock or live (Convex + WhatsApp)",
   "nodes": [
     {
       "parameters": {
@@ -64,29 +64,12 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $vars.OPENAI_API_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { model: $vars.OPENAI_MODEL || 'gpt-4.1-mini', temperature: 0.3, messages: [ { role: 'system', content: 'Voce e um assistente de WhatsApp para triagem inicial. Responda em portugues do Brasil, em no maximo 3 frases, pedindo proximo dado objetivo quando faltar contexto.' }, { role: 'user', content: $('Normalize Inbound').item.json.body || '[mensagem sem texto]' } ] } }}"
+        "jsCode": "const normalizeItems = $items('Normalize Inbound', 0, 0);\nconst inbound = normalizeItems?.[0]?.json ?? {};\nconst inboundText = typeof inbound.body === 'string' && inbound.body.trim().length > 0\n  ? inbound.body.trim()\n  : '[mensagem sem texto]';\nconst preferredMode = String($vars.AI_MODE ?? 'mock').trim().toLowerCase();\nconst hasOpenAiKey = typeof $vars.OPENAI_API_KEY === 'string' && $vars.OPENAI_API_KEY.trim().length > 0;\nconst wantsLive = preferredMode === 'live' && hasOpenAiKey;\n\nlet aiMode = 'mock';\nlet replyText = '';\n\nif (wantsLive) {\n  try {\n    const response = await fetch('https://api.openai.com/v1/chat/completions', {\n      method: 'POST',\n      headers: {\n        Authorization: `Bearer ${$vars.OPENAI_API_KEY}`,\n        'Content-Type': 'application/json'\n      },\n      body: JSON.stringify({\n        model: $vars.OPENAI_MODEL || 'gpt-4.1-mini',\n        temperature: 0.3,\n        messages: [\n          {\n            role: 'system',\n            content: 'Voce e um assistente de WhatsApp para triagem inicial. Responda em portugues do Brasil, em no maximo 3 frases, pedindo proximo dado objetivo quando faltar contexto.'\n          },\n          {\n            role: 'user',\n            content: inboundText\n          }\n        ]\n      })\n    });\n\n    if (response.ok) {\n      const data = await response.json();\n      const liveReply = data?.choices?.[0]?.message?.content;\n      if (typeof liveReply === 'string' && liveReply.trim().length > 0) {\n        aiMode = 'live';\n        replyText = liveReply.trim();\n      }\n    }\n  } catch (error) {\n    // fallback para mock quando live falhar\n  }\n}\n\nif (!replyText) {\n  const compact = inboundText.replace(/\\s+/g, ' ').trim().slice(0, 80);\n  replyText = `Recebi: \"${compact}\". Para continuar a triagem, informe seu nome completo e a data de inicio do problema previdenciario.`;\n}\n\nreturn [{\n  json: {\n    choices: [\n      {\n        message: {\n          content: replyText\n        }\n      }\n    ],\n    aiMode,\n    model: aiMode === 'live' ? ($vars.OPENAI_MODEL || 'gpt-4.1-mini') : 'mock-deterministic-v1'\n  }\n}];"
       },
-      "id": "f07785fd-c8cb-4e8e-a8a2-f44eb4e94a85",
-      "name": "OpenAI - Generate Reply",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "6f326e81-caf6-4df6-87c9-5e6dff6c1642",
+      "name": "AI Reply (Mock or Live)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         1060,
         320
@@ -97,7 +80,7 @@
         "resource": "message",
         "operation": "send",
         "phoneNumberId": "={{ $('Normalize Inbound').item.json.phoneNumberId }}",
-        "recipientPhoneNumber": "={{ $vars.TEST_RECIPIENT_PHONE || $('Normalize Inbound').item.json.contactWaId }}",
+        "recipientPhoneNumber": "={{ $('Normalize Inbound').item.json.contactWaId }}",
         "messageType": "text",
         "textBody": "={{ $json.choices?.[0]?.message?.content || 'Recebi sua mensagem. Ja estou processando sua solicitacao.' }}"
       },
@@ -129,7 +112,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { phoneNumberId: $('Normalize Inbound').item.json.phoneNumberId, conversationId: $('Persist Inbound (Convex)').item.json.conversationId, externalMessageId: $json.messages?.[0]?.id, body: $('OpenAI - Generate Reply').item.json.choices?.[0]?.message?.content || 'Resposta enviada pelo assistente.' } }}"
+        "jsonBody": "={{ { phoneNumberId: $('Normalize Inbound').item.json.phoneNumberId, conversationId: $('Persist Inbound (Convex)').item.json.conversationId, externalMessageId: $json.messages?.[0]?.id, body: $('AI Reply (Mock or Live)').item.json.choices?.[0]?.message?.content || 'Resposta enviada pelo assistente.' } }}"
       },
       "id": "f4da7691-cd5b-4f67-a823-d1d607d88f4a",
       "name": "Persist Outbound (Convex)",
@@ -168,18 +151,7 @@
       "main": [
         [
           {
-            "node": "OpenAI - Generate Reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI - Generate Reply": {
-      "main": [
-        [
-          {
-            "node": "WhatsApp Business Cloud",
+            "node": "AI Reply (Mock or Live)",
             "type": "main",
             "index": 0
           }
@@ -191,6 +163,17 @@
         [
           {
             "node": "Persist Outbound (Convex)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Reply (Mock or Live)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Business Cloud",
             "type": "main",
             "index": 0
           }

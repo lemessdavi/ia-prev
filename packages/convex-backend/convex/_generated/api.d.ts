@@ -19,6 +19,8 @@ import type * as coreInput from "../coreInput.js";
 import type * as corePassword from "../corePassword.js";
 import type * as coreValidators from "../coreValidators.js";
 import type * as http from "../http.js";
+import type * as n8nBridge from "../n8nBridge.js";
+import type * as n8nBridgeNode from "../n8nBridgeNode.js";
 import type * as seed from "../seed.js";
 import type * as seedNode from "../seedNode.js";
 import type * as server from "../server.js";
@@ -46,6 +48,8 @@ declare const fullApi: ApiFromModules<{
   corePassword: typeof corePassword;
   coreValidators: typeof coreValidators;
   http: typeof http;
+  n8nBridge: typeof n8nBridge;
+  n8nBridgeNode: typeof n8nBridgeNode;
   seed: typeof seed;
   seedNode: typeof seedNode;
   server: typeof server;
