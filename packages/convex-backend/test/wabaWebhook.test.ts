@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
-import { describe, expect, it } from "vitest";
+import { createHmac } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.{ts,js}");
@@ -16,6 +17,10 @@ type WebhookResult = {
   blocked: number;
   ignored: number;
 };
+
+const DEFAULT_VERIFY_TOKEN = "waba_verify_token_test";
+const DEFAULT_APP_SECRET = "waba_app_secret_test";
+const UNKNOWN_PHONE_NUMBER_ID = "unknown_phone_number_id";
 
 function buildInboundPayload(input: {
   wabaAccountId?: string;
@@ -79,19 +84,175 @@ function buildInboundPayload(input: {
 }
 
 async function postWebhook(t: any, payload: unknown) {
+  return await postWebhookWithSignature(t, payload, { signatureMode: "valid" });
+}
+
+function buildMetaSignature(rawBody: string, secret: string): string {
+  const signature = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
+  return `sha256=${signature}`;
+}
+
+async function postWebhookWithSignature(
+  t: any,
+  payload: unknown,
+  options: {
+    signatureMode: "valid" | "invalid" | "missing";
+  },
+) {
+  const rawBody = JSON.stringify(payload);
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+
+  if (options.signatureMode !== "missing") {
+    const appSecret = process.env.WHATSAPP_APP_SECRET;
+    if (!appSecret) {
+      throw new Error("WHATSAPP_APP_SECRET must be configured during tests.");
+    }
+
+    const signatureSecret = options.signatureMode === "invalid" ? `${appSecret}_invalid` : appSecret;
+    headers["x-hub-signature-256"] = buildMetaSignature(rawBody, signatureSecret);
+  }
+
   const response = await t.fetch("/webhooks/waba", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
+    headers,
+    body: rawBody,
   });
 
-  const body = (await response.json()) as WebhookResult;
+  const body = (await response.json()) as any;
   return { response, body };
 }
 
 describe("WABA webhook ingestion (Convex native)", () => {
+  let previousVerifyToken: string | undefined;
+  let previousAppSecret: string | undefined;
+
+  beforeEach(() => {
+    previousVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+    previousAppSecret = process.env.WHATSAPP_APP_SECRET;
+    process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = DEFAULT_VERIFY_TOKEN;
+    process.env.WHATSAPP_APP_SECRET = DEFAULT_APP_SECRET;
+  });
+
+  afterEach(() => {
+    if (typeof previousVerifyToken === "string") {
+      process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = previousVerifyToken;
+    } else {
+      delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+    }
+
+    if (typeof previousAppSecret === "string") {
+      process.env.WHATSAPP_APP_SECRET = previousAppSecret;
+    } else {
+      delete process.env.WHATSAPP_APP_SECRET;
+    }
+  });
+
+  it("returns verification challenge when verify token is valid", async () => {
+    const t = convexTest(schema, modules);
+    const challenge = "challenge-token-123";
+
+    const response = await t.fetch(
+      `/webhooks/waba?hub.mode=subscribe&hub.verify_token=${DEFAULT_VERIFY_TOKEN}&hub.challenge=${challenge}`,
+      {
+        method: "GET",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(challenge);
+  });
+
+  it("blocks verification challenge when verify token is invalid and writes audit trail", async () => {
+    const t = convexTest(schema, modules);
+
+    const response = await t.fetch(
+      "/webhooks/waba?hub.mode=subscribe&hub.verify_token=invalid-token&hub.challenge=challenge-token-123",
+      {
+        method: "GET",
+      },
+    );
+
+    expect(response.status).toBe(403);
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
+    expect(audits.some((item: { eventType: string; outcome: string }) => item.eventType === "verify_token_invalid" && item.outcome === "blocked")).toBe(true);
+  });
+
+  it("rejects payload with missing signature and writes audit trail", async () => {
+    const t = convexTest(schema, modules);
+
+    const result = await postWebhookWithSignature(
+      t,
+      buildInboundPayload({
+        phoneNumberId: "phone_missing_sig",
+        fromWaId: "5511990000001",
+        externalMessageId: "wamid-missing-signature-1",
+      }),
+      { signatureMode: "missing" },
+    );
+
+    expect(result.response.status).toBe(401);
+    expect(result.body).toMatchObject({
+      ok: false,
+      code: "UNAUTHENTICATED",
+    });
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
+    expect(audits.some((item: { eventType: string; outcome: string }) => item.eventType === "missing_signature" && item.outcome === "blocked")).toBe(true);
+  });
+
+  it("rejects payload with invalid signature and writes audit trail", async () => {
+    const t = convexTest(schema, modules);
+
+    const result = await postWebhookWithSignature(
+      t,
+      buildInboundPayload({
+        phoneNumberId: "phone_invalid_sig",
+        fromWaId: "5511990000002",
+        externalMessageId: "wamid-invalid-signature-1",
+      }),
+      { signatureMode: "invalid" },
+    );
+
+    expect(result.response.status).toBe(401);
+    expect(result.body).toMatchObject({
+      ok: false,
+      code: "UNAUTHENTICATED",
+    });
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
+    expect(audits.some((item: { eventType: string; outcome: string }) => item.eventType === "invalid_signature" && item.outcome === "blocked")).toBe(true);
+  });
+
+  it("fails closed and audits error when WHATSAPP_APP_SECRET is not configured", async () => {
+    const t = convexTest(schema, modules);
+    delete process.env.WHATSAPP_APP_SECRET;
+
+    const payload = buildInboundPayload({
+      phoneNumberId: "phone_secret_missing",
+      fromWaId: "5511990000003",
+      externalMessageId: "wamid-secret-missing-1",
+    });
+    const rawBody = JSON.stringify(payload);
+    const signature = buildMetaSignature(rawBody, "fallback-secret");
+
+    const response = await t.fetch("/webhooks/waba", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hub-signature-256": signature,
+      },
+      body: rawBody,
+    });
+
+    expect(response.status).toBe(503);
+
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
+    expect(audits.some((item: { eventType: string; outcome: string }) => item.eventType === "signature_secret_not_configured" && item.outcome === "error")).toBe(true);
+  });
+
   it("isolates tenant A/B and persists attachments in the correct tenant", async () => {
     const t = convexTest(schema, modules);
 
@@ -192,7 +353,7 @@ describe("WABA webhook ingestion (Convex native)", () => {
     expect(result.response.status).toBe(404);
     expect(result.body).toEqual({ processed: 0, duplicates: 0, blocked: 1, ignored: 0 });
 
-    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: "unknown_phone_number_id" });
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
     expect(audits).toHaveLength(1);
     expect(audits[0]?.eventType).toBe("missing_phone_number_id");
     expect(audits[0]?.outcome).toBe("blocked");
@@ -201,13 +362,16 @@ describe("WABA webhook ingestion (Convex native)", () => {
 
   it("fails closed and audits invalid json payload", async () => {
     const t = convexTest(schema, modules);
+    const rawBody = "{not-valid-json";
+    const signature = buildMetaSignature(rawBody, DEFAULT_APP_SECRET);
 
     const response = await t.fetch("/webhooks/waba", {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-hub-signature-256": signature,
       },
-      body: "{not-valid-json",
+      body: rawBody,
     });
 
     const body = (await response.json()) as WebhookResult;
@@ -215,7 +379,7 @@ describe("WABA webhook ingestion (Convex native)", () => {
     expect(response.status).toBe(404);
     expect(body).toEqual({ processed: 0, duplicates: 0, blocked: 1, ignored: 0 });
 
-    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: "unknown_phone_number_id" });
+    const audits = await t.query(listAuditByPhoneNumberRef, { phoneNumberId: UNKNOWN_PHONE_NUMBER_ID });
     expect(audits).toHaveLength(1);
     expect(audits[0]?.eventType).toBe("invalid_json");
     expect(audits[0]?.outcome).toBe("blocked");
