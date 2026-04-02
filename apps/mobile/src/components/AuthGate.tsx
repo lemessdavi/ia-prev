@@ -7,8 +7,8 @@ import { useOperatorApp } from "@/context/operatorAppContext";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { isAuthenticated, login, loadingAuth, errorMessage, clearError } = useOperatorApp();
-  const [username, setUsername] = useState("ana.lima");
-  const [password, setPassword] = useState("Ana@123456");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   if (isAuthenticated) {
     return <>{children}</>;
