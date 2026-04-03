@@ -147,6 +147,8 @@ export function listConversationsForInbox(input: {
         conversationStatus: conversation.conversationStatus,
         triageResult: conversation.triageResult,
         closureReason: conversation.closureReason,
+        closureReasonCode: conversation.closureReasonCode,
+        closureReasonDetail: conversation.closureReasonDetail,
         lastMessagePreview: conversation.lastMessagePreview,
         lastMessageAt: conversation.lastMessageAt,
         lastActivityAt: conversation.lastActivityAt,
@@ -212,6 +214,8 @@ export function getConversationThread(input: {
     conversationStatus: conversation.conversationStatus,
     triageResult: conversation.triageResult,
     closureReason: conversation.closureReason,
+    closureReasonCode: conversation.closureReasonCode,
+    closureReasonDetail: conversation.closureReasonDetail,
     participantIds: conversation.participantIds,
     messages,
     handoffEvents: input.store.listHandoffEvents(conversationId, session.tenantId),
@@ -266,6 +270,8 @@ export function exportConversationDossier(input: {
     attachments: input.store.listAttachments(conversationId, session.tenantId),
     handoffEvents: input.store.listHandoffEvents(conversationId, session.tenantId),
     closureReason: conversation.closureReason,
+    closureReasonCode: conversation.closureReasonCode,
+    closureReasonDetail: conversation.closureReasonDetail,
   };
 }
 

@@ -3,6 +3,13 @@ export type TenantId = string;
 export type UserRole = "superadmin" | "tenant_user";
 export type ConversationStatus = "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO";
 export type TriageResult = "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "N_A";
+export type ClosureReasonCode =
+  | "SEM_ELEGIBILIDADE"
+  | "CLIENTE_INATIVO"
+  | "DESISTENCIA"
+  | "ENCAMINHADO"
+  | "CONVERTIDO"
+  | "OUTRO";
 
 export interface Session {
   userId: Id;
@@ -89,6 +96,8 @@ export interface Conversation {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   title: string;
   lastMessagePreview: string;
   lastMessageAt: number;
@@ -203,6 +212,8 @@ export interface ConversationInboxItem {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   lastMessagePreview: string;
   lastMessageAt: number;
   lastActivityAt: number;
@@ -233,6 +244,8 @@ export interface ConversationThreadPayload {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   participantIds: Id[];
   messages: ConversationThreadMessage[];
   handoffEvents: HandoffEvent[];
@@ -249,4 +262,6 @@ export interface ConversationDossierExport {
   attachments: Attachment[];
   handoffEvents: HandoffEvent[];
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
 }

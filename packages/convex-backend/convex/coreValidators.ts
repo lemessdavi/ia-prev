@@ -13,6 +13,14 @@ export const triageResultValidator = v.union(
   v.literal("NAO_APTO"),
   v.literal("N_A"),
 );
+export const closureReasonCodeValidator = v.union(
+  v.literal("SEM_ELEGIBILIDADE"),
+  v.literal("CLIENTE_INATIVO"),
+  v.literal("DESISTENCIA"),
+  v.literal("ENCAMINHADO"),
+  v.literal("CONVERTIDO"),
+  v.literal("OUTRO"),
+);
 
 export const sessionValidator = v.object({
   sessionToken: v.string(),
@@ -98,6 +106,8 @@ export const conversationInboxItemValidator = v.object({
   conversationStatus: conversationStatusValidator,
   triageResult: triageResultValidator,
   closureReason: v.optional(v.string()),
+  closureReasonCode: v.optional(closureReasonCodeValidator),
+  closureReasonDetail: v.optional(v.string()),
   lastMessagePreview: v.string(),
   lastMessageAt: v.number(),
   lastActivityAt: v.number(),
@@ -138,6 +148,8 @@ export const conversationThreadPayloadValidator = v.object({
   conversationStatus: conversationStatusValidator,
   triageResult: triageResultValidator,
   closureReason: v.optional(v.string()),
+  closureReasonCode: v.optional(closureReasonCodeValidator),
+  closureReasonDetail: v.optional(v.string()),
   participantIds: v.array(v.string()),
   messages: v.array(conversationThreadMessageValidator),
   handoffEvents: v.array(handoffEventValidator),
@@ -187,4 +199,6 @@ export const conversationDossierExportValidator = v.object({
   attachments: v.array(attachmentValidator),
   handoffEvents: v.array(handoffEventValidator),
   closureReason: v.optional(v.string()),
+  closureReasonCode: v.optional(closureReasonCodeValidator),
+  closureReasonDetail: v.optional(v.string()),
 });

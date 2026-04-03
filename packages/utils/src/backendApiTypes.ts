@@ -1,3 +1,5 @@
+import type { ClosureReasonCode } from "./closureReasonCatalog";
+
 export type UserRole = "superadmin" | "tenant_user";
 export type ConversationStatus = "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO";
 export type TriageResult = "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "N_A";
@@ -33,6 +35,8 @@ export type ConversationInboxItemDTO = {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   lastMessagePreview: string;
   lastMessageAt: number;
   lastActivityAt: number;
@@ -73,6 +77,8 @@ export type ConversationThreadPayloadDTO = {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   participantIds: string[];
   messages: ConversationThreadMessageDTO[];
   handoffEvents: HandoffEventDTO[];
@@ -133,6 +139,8 @@ export type DossierExportDTO = {
   attachments: AttachmentDTO[];
   handoffEvents: HandoffEventDTO[];
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
 };
 
 export type BackendApiError = {

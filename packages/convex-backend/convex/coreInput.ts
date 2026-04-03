@@ -1,4 +1,10 @@
 import { throwBusinessError } from "./coreErrors";
+import {
+  formatClosureReason,
+  getClosureReasonByCode,
+  normalizeClosureReasonDetail,
+  type ClosureReasonCode,
+} from "../src/closureReasons";
 
 export function assertId(value: string, field: string): string {
   const normalized = value?.trim();
@@ -122,12 +128,43 @@ export function assertSearchTerm(search?: string): string | undefined {
   return normalized;
 }
 
-export function assertClosureReason(reason: string): string {
-  const normalized = reason?.trim();
-  if (!normalized || normalized.length < 5 || normalized.length > 500) {
-    throwBusinessError("BAD_REQUEST", "Closure reason must be between 5 and 500 chars.", {
-      length: normalized?.length ?? 0,
+export function assertClosureReasonPayload(input: { reasonCode: string; reasonDetail?: string }): {
+  reasonCode: ClosureReasonCode;
+  reasonDetail?: string;
+  closureReason: string;
+} {
+  const entry = getClosureReasonByCode(input.reasonCode);
+  if (!entry) {
+    throwBusinessError("BAD_REQUEST", "Closure reason code is invalid.", {
+      reasonCode: input.reasonCode,
     });
   }
-  return normalized;
+
+  const reasonDetail = normalizeClosureReasonDetail(input.reasonDetail);
+  if (reasonDetail && reasonDetail.length > 320) {
+    throwBusinessError("BAD_REQUEST", "Closure reason detail must be up to 320 chars.", {
+      length: reasonDetail.length,
+      reasonCode: entry.code,
+    });
+  }
+
+  if (entry.requiresDetail && !reasonDetail) {
+    throwBusinessError("BAD_REQUEST", "Closure reason detail is required for this reason code.", {
+      reasonCode: entry.code,
+    });
+  }
+
+  const closureReason = formatClosureReason(entry.code, reasonDetail);
+  if (closureReason.length > 500) {
+    throwBusinessError("BAD_REQUEST", "Closure reason summary must be up to 500 chars.", {
+      length: closureReason.length,
+      reasonCode: entry.code,
+    });
+  }
+
+  return {
+    reasonCode: entry.code,
+    reasonDetail,
+    closureReason,
+  };
 }

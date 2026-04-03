@@ -8,6 +8,7 @@ import type {
   LoginResponse,
   TenantWorkspaceSummaryDTO,
 } from "./backendApiTypes";
+import type { ClosureReasonCode } from "./closureReasonCatalog";
 
 const DEFAULT_CONVEX_URL = "";
 
@@ -36,7 +37,7 @@ export interface BackendApiClient {
   markConversationAsRead(conversationId: string): Promise<{ conversationId: string; updatedCount: number }>;
   sendMessage(conversationId: string, body: string, attachmentUrl?: string): Promise<void>;
   takeHandoff(conversationId: string): Promise<void>;
-  closeConversation(conversationId: string, reason: string): Promise<void>;
+  closeConversation(conversationId: string, reasonCode: ClosureReasonCode, reasonDetail?: string): Promise<void>;
   exportDossier(conversationId: string): Promise<DossierExportDTO>;
 }
 
@@ -241,13 +242,14 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
         });
       });
     },
-    async closeConversation(conversationId, reason) {
+    async closeConversation(conversationId, reasonCode, reasonDetail) {
       await execute(async () => {
         const client = getConvexClient(convexUrl);
         await client.mutation(convexApi.chat.closeConversationWithReason, {
           sessionToken: requireSessionToken(),
           conversationId,
-          reason,
+          reasonCode,
+          reasonDetail,
         });
       });
     },

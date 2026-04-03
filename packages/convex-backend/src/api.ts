@@ -1,4 +1,5 @@
 import { makeFunctionReference } from "convex/server";
+import type { ClosureReasonCode } from "./closureReasons";
 
 export type SessionInfo = {
   sessionToken: string;
@@ -76,6 +77,8 @@ export type ConversationInboxItem = {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   lastMessagePreview: string;
   lastMessageAt: number;
   lastActivityAt: number;
@@ -127,6 +130,8 @@ export type ConversationThreadPayload = {
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
   participantIds: string[];
   messages: ConversationThreadMessage[];
   handoffEvents: HandoffEvent[];
@@ -176,6 +181,8 @@ export type ConversationDossierExport = {
   attachments: Attachment[];
   handoffEvents: HandoffEvent[];
   closureReason?: string;
+  closureReasonCode?: ClosureReasonCode;
+  closureReasonDetail?: string;
 };
 
 export const api = {
@@ -296,8 +303,14 @@ export const api = {
     >("chatDomain:takeConversationHandoff"),
     closeConversationWithReason: makeFunctionReference<
       "mutation",
-      { sessionToken: string; conversationId: string; reason: string },
-      { conversationId: string; conversationStatus: ConversationStatus; closureReason: string }
+      { sessionToken: string; conversationId: string; reasonCode: ClosureReasonCode; reasonDetail?: string },
+      {
+        conversationId: string;
+        conversationStatus: ConversationStatus;
+        closureReason: string;
+        closureReasonCode: ClosureReasonCode;
+        closureReasonDetail?: string;
+      }
     >("chatDomain:closeConversationWithReason"),
     exportConversationDossier: makeFunctionReference<
       "mutation",

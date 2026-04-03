@@ -1,5 +1,5 @@
 import { BackendError } from "./errors";
-import type { ConversationStatus } from "./types";
+import type { ClosureReasonCode, ConversationStatus } from "./types";
 
 export function assertId(value: string, field: string): string {
   if (!value || typeof value !== "string" || value.trim().length < 3) {
@@ -91,17 +91,59 @@ export function assertSearchTerm(search?: string): string | undefined {
   return normalized.toLowerCase();
 }
 
-export function assertClosureReason(reason: string): string {
-  if (!reason || typeof reason !== "string") {
-    throw new BackendError("Closure reason is required.", "BAD_REQUEST");
+const closureReasonCatalog: Record<ClosureReasonCode, { label: string; requiresDetail: boolean }> = {
+  SEM_ELEGIBILIDADE: { label: "Sem elegibilidade", requiresDetail: false },
+  CLIENTE_INATIVO: { label: "Cliente inativo", requiresDetail: false },
+  DESISTENCIA: { label: "Desistencia", requiresDetail: false },
+  ENCAMINHADO: { label: "Encaminhado", requiresDetail: true },
+  CONVERTIDO: { label: "Convertido", requiresDetail: false },
+  OUTRO: { label: "Outro", requiresDetail: true },
+};
+
+export function assertClosureReasonCode(reasonCode: string): ClosureReasonCode {
+  if (typeof reasonCode !== "string") {
+    throw new BackendError("Closure reason code is required.", "BAD_REQUEST");
   }
 
-  const normalized = reason.trim();
-  if (normalized.length < 5 || normalized.length > 320) {
-    throw new BackendError("Closure reason must be between 5 and 320 chars.", "BAD_REQUEST", {
+  const normalized = reasonCode.trim().toUpperCase();
+  if (normalized in closureReasonCatalog) {
+    return normalized as ClosureReasonCode;
+  }
+
+  throw new BackendError("Closure reason code is invalid.", "BAD_REQUEST", {
+    reasonCode,
+  });
+}
+
+export function assertClosureReasonDetail(reasonCode: ClosureReasonCode, reasonDetail?: string): string | undefined {
+  const normalized = reasonDetail?.trim();
+  if (normalized && normalized.length > 320) {
+    throw new BackendError("Closure reason detail must be up to 320 chars.", "BAD_REQUEST", {
+      reasonCode,
       length: normalized.length,
     });
   }
 
-  return normalized;
+  if (closureReasonCatalog[reasonCode].requiresDetail && !normalized) {
+    throw new BackendError("Closure reason detail is required for this reason code.", "BAD_REQUEST", {
+      reasonCode,
+    });
+  }
+
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+export function formatClosureReason(reasonCode: ClosureReasonCode, reasonDetail?: string): string {
+  const label = closureReasonCatalog[reasonCode].label;
+  const normalizedDetail = reasonDetail?.trim();
+  const reason = normalizedDetail ? `${label}: ${normalizedDetail}` : label;
+
+  if (reason.length > 500) {
+    throw new BackendError("Closure reason summary must be up to 500 chars.", "BAD_REQUEST", {
+      reasonCode,
+      length: reason.length,
+    });
+  }
+
+  return reason;
 }
