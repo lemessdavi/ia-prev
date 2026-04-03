@@ -28,6 +28,8 @@ This repository now runs web/mobile against Convex as the primary runtime.
    - Mobile: copy `apps/mobile/.env.example` and set `EXPO_PUBLIC_CONVEX_URL`.
 3. Run Convex + apps together:
    - `pnpm dev`
+   - If `CONVEX_DEPLOYMENT`/`CONVEX_DEPLOY_KEY` are missing in non-interactive runs, Convex is skipped and web/mobile continue.
+   - To force Convex dev manually in interactive mode: `pnpm convex:dev:force`
 
 Useful commands:
 - `pnpm convex:dev`
