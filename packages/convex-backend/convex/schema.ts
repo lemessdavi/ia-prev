@@ -83,6 +83,34 @@ export default defineSchema({
     .index("by_conversation_id", ["conversationId"])
     .index("by_tenant_id_and_last_activity", ["tenantId", "lastActivityAt"]),
 
+  conversationTriages: defineTable({
+    triageId: v.string(),
+    tenantId: v.string(),
+    conversationId: v.string(),
+    flowType: v.union(v.literal("AUXILIO_ACIDENTE"), v.literal("APOSENTADORIA_ANTECIPADA")),
+    answers: v.object({
+      teveAcidente: v.optional(v.boolean()),
+      possuiSequelaConsolidada: v.optional(v.boolean()),
+      reducaoCapacidadeLaboral: v.optional(v.boolean()),
+      possuiQualidadeSegurado: v.optional(v.boolean()),
+      anoAcidente: v.optional(v.number()),
+      idade: v.optional(v.number()),
+      tempoContribuicaoAnos: v.optional(v.number()),
+      possuiCarenciaMinima: v.optional(v.boolean()),
+      possuiTempoEspecialComprovado: v.optional(v.boolean()),
+    }),
+    triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO"), v.literal("N_A")),
+    reasons: v.array(v.string()),
+    missingFields: v.array(v.string()),
+    inconsistencies: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    evaluatedAt: v.optional(v.number()),
+  })
+    .index("by_triage_id", ["triageId"])
+    .index("by_tenant_id_and_conversation_id", ["tenantId", "conversationId"])
+    .index("by_tenant_id_and_flow_type_and_updated_at", ["tenantId", "flowType", "updatedAt"]),
+
   conversationMemberships: defineTable({
     tenantId: v.string(),
     conversationId: v.string(),

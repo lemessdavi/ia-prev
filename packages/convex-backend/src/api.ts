@@ -57,6 +57,30 @@ export type ConversationListItem = {
 
 export type ConversationStatus = "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO";
 export type TriageResult = "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "N_A";
+export type TriageFlow = "AUXILIO_ACIDENTE" | "APOSENTADORIA_ANTECIPADA";
+export type TriageAnswers = {
+  teveAcidente?: boolean;
+  possuiSequelaConsolidada?: boolean;
+  reducaoCapacidadeLaboral?: boolean;
+  possuiQualidadeSegurado?: boolean;
+  anoAcidente?: number;
+  idade?: number;
+  tempoContribuicaoAnos?: number;
+  possuiCarenciaMinima?: boolean;
+  possuiTempoEspecialComprovado?: boolean;
+};
+export type ConversationTriage = {
+  conversationId: string;
+  flowType: TriageFlow;
+  answers: TriageAnswers;
+  triageResult: TriageResult;
+  reasons: string[];
+  missingFields: string[];
+  inconsistencies: string[];
+  createdAt: number;
+  updatedAt: number;
+  evaluatedAt?: number;
+};
 
 export type TenantWorkspaceSummary = {
   tenantId: string;
@@ -299,6 +323,21 @@ export const api = {
       { sessionToken: string; conversationId: string; reason: string },
       { conversationId: string; conversationStatus: ConversationStatus; closureReason: string }
     >("chatDomain:closeConversationWithReason"),
+    upsertTriageAnswers: makeFunctionReference<
+      "mutation",
+      { sessionToken: string; conversationId: string; flowType: TriageFlow; answers: TriageAnswers },
+      ConversationTriage
+    >("triageEngine:upsertTriageAnswers"),
+    evaluateConversationTriage: makeFunctionReference<
+      "mutation",
+      { sessionToken: string; conversationId: string },
+      ConversationTriage & { evaluatedAt: number }
+    >("triageEngine:evaluateConversationTriage"),
+    getConversationTriage: makeFunctionReference<
+      "query",
+      { sessionToken: string; conversationId: string },
+      ConversationTriage | null
+    >("triageEngine:getConversationTriage"),
     exportConversationDossier: makeFunctionReference<
       "mutation",
       { sessionToken: string; conversationId: string },
