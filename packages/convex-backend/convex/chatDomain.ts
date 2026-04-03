@@ -12,13 +12,14 @@ import {
 import { throwBusinessError } from "./coreErrors";
 import {
   assertAttachmentUrl,
-  assertClosureReason,
+  assertClosureReasonPayload,
   assertConversationStatusFilter,
   assertId,
   assertMessageBody,
   assertSearchTerm,
 } from "./coreInput";
 import {
+  closureReasonCodeValidator,
   conversationDossierExportValidator,
   conversationInboxItemValidator,
   conversationListItemValidator,
@@ -222,6 +223,8 @@ async function listInboxRows(db: any, session: SessionShape, input: { status?: s
         conversationStatus: conversation.conversationStatus,
         triageResult: conversation.triageResult,
         closureReason: conversation.closureReason,
+        closureReasonCode: conversation.closureReasonCode,
+        closureReasonDetail: conversation.closureReasonDetail,
         lastMessagePreview: conversation.lastMessagePreview,
         lastMessageAt: conversation.lastMessageAt,
         lastActivityAt: conversation.lastActivityAt,
@@ -398,6 +401,8 @@ export const getConversationThread = query({
       conversationStatus: conversation.conversationStatus,
       triageResult: conversation.triageResult,
       closureReason: conversation.closureReason,
+      closureReasonCode: conversation.closureReasonCode,
+      closureReasonDetail: conversation.closureReasonDetail,
       participantIds: conversation.participantIds,
       messages: threadMessages,
       handoffEvents: handoffEvents.map((row: any) => toHandoffEvent(row)),
@@ -586,17 +591,23 @@ export const closeConversationWithReason = mutation({
   args: {
     sessionToken: v.string(),
     conversationId: v.string(),
-    reason: v.string(),
+    reasonCode: v.string(),
+    reasonDetail: v.optional(v.string()),
   },
   returns: v.object({
     conversationId: v.string(),
     conversationStatus: conversationStatusValidator,
     closureReason: v.string(),
+    closureReasonCode: closureReasonCodeValidator,
+    closureReasonDetail: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);
     const conversationId = assertId(args.conversationId, "conversationId");
-    const reason = assertClosureReason(args.reason);
+    const closureReason = assertClosureReasonPayload({
+      reasonCode: args.reasonCode,
+      reasonDetail: args.reasonDetail,
+    });
     const now = Date.now();
 
     const conversation = await requireTenantConversation(ctx.db, {
@@ -606,7 +617,9 @@ export const closeConversationWithReason = mutation({
 
     await ctx.db.patch(conversation._id, {
       conversationStatus: "FECHADO",
-      closureReason: reason,
+      closureReason: closureReason.closureReason,
+      closureReasonCode: closureReason.reasonCode,
+      closureReasonDetail: closureReason.reasonDetail,
       lastActivityAt: now,
     });
 
@@ -623,7 +636,9 @@ export const closeConversationWithReason = mutation({
     return {
       conversationId,
       conversationStatus: "FECHADO" as const,
-      closureReason: reason,
+      closureReason: closureReason.closureReason,
+      closureReasonCode: closureReason.reasonCode,
+      closureReasonDetail: closureReason.reasonDetail,
     };
   },
 });
@@ -707,6 +722,8 @@ export const exportConversationDossier = mutation({
       attachments: attachmentRows.map((row: any) => toAttachment(row)),
       handoffEvents: handoffRows.map((row: any) => toHandoffEvent(row)),
       closureReason: conversation.closureReason,
+      closureReasonCode: conversation.closureReasonCode,
+      closureReasonDetail: conversation.closureReasonDetail,
     };
   },
 });

@@ -12,3 +12,4 @@ export {
 } from "./chatMocks";
 export * from "./backendApiTypes";
 export * from "./backendApiClient";
+export * from "./closureReasonCatalog";

@@ -3,7 +3,15 @@ import { BackendError, logInfo } from "./errors";
 import { hashPassword } from "./security";
 import { InMemoryBackendStore } from "./store";
 import type { Session } from "./types";
-import { assertAttachmentUrl, assertClosureReason, assertId, assertMessageBody, assertPassword } from "./validators";
+import {
+  assertAttachmentUrl,
+  assertClosureReasonCode,
+  assertClosureReasonDetail,
+  assertId,
+  assertMessageBody,
+  assertPassword,
+  formatClosureReason,
+} from "./validators";
 
 export function sendMessage(input: {
   session?: Session | null;
@@ -192,12 +200,15 @@ export function closeConversationWithReason(input: {
   session?: Session | null;
   store: InMemoryBackendStore;
   conversationId: string;
-  reason: string;
+  reasonCode: string;
+  reasonDetail?: string;
   now?: number;
 }) {
   const session = requirePersistedSession({ session: input.session, store: input.store });
   const conversationId = assertId(input.conversationId, "conversationId");
-  const reason = assertClosureReason(input.reason);
+  const reasonCode = assertClosureReasonCode(input.reasonCode);
+  const reasonDetail = assertClosureReasonDetail(reasonCode, input.reasonDetail);
+  const reason = formatClosureReason(reasonCode, reasonDetail);
   const now = input.now ?? Date.now();
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
@@ -210,6 +221,8 @@ export function closeConversationWithReason(input: {
   input.store.updateConversation(conversationId, session.tenantId, {
     conversationStatus: "FECHADO",
     closureReason: reason,
+    closureReasonCode: reasonCode,
+    closureReasonDetail: reasonDetail,
     lastActivityAt: now,
   });
 
@@ -227,5 +240,7 @@ export function closeConversationWithReason(input: {
     conversationId,
     conversationStatus: "FECHADO" as const,
     closureReason: reason,
+    closureReasonCode: reasonCode,
+    closureReasonDetail: reasonDetail,
   };
 }

@@ -64,8 +64,9 @@ test.describe("IAP-21 - fluxo operacional principal", () => {
     await expect(sentMessage).toHaveCount(1);
     await expect(sentMessage.first()).toBeVisible();
 
-    const closureReason = `Encerrado no e2e ${Date.now()}`;
-    await page.getByTestId("dossier-closure-reason-input").fill(closureReason);
+    const closureReasonDetail = `Encerrado no e2e ${Date.now()}`;
+    await page.getByTestId("dossier-closure-reason-select").selectOption("OUTRO");
+    await page.getByTestId("dossier-closure-reason-detail-input").fill(closureReasonDetail);
     await page.getByTestId("dossier-close-button").click();
     await expect(page.getByTestId("dossier-status-badge")).toContainText("Fechado");
 
@@ -83,12 +84,16 @@ test.describe("IAP-21 - fluxo operacional principal", () => {
     const exported = JSON.parse(await readFile(downloadPath, "utf8")) as {
       conversationId: string;
       closureReason?: string;
+      closureReasonCode?: string;
+      closureReasonDetail?: string;
       messages: Array<{ body: string }>;
       attachments: Array<{ fileName: string; contentType: string }>;
     };
 
     expect(exported.conversationId).toBe(CONVERSATION_CAIO);
-    expect(exported.closureReason).toBe(closureReason);
+    expect(exported.closureReasonCode).toBe("OUTRO");
+    expect(exported.closureReasonDetail).toBe(closureReasonDetail);
+    expect(exported.closureReason).toBe(`Outro: ${closureReasonDetail}`);
     expect(exported.messages.some((message) => message.body === outboundBody)).toBe(true);
     expect(exported.attachments.some((attachment) => attachment.fileName === "laudo-medico.pdf" && attachment.contentType === "application/pdf")).toBe(true);
 

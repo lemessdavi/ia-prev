@@ -4,7 +4,9 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { tokens } from "config";
 import {
   BackendApiClientError,
+  closureReasonCatalog,
   createBackendApiClient,
+  type ClosureReasonCode,
   type ConversationInboxItemDTO,
   type ConversationStatus,
   type ConversationThreadPayloadDTO,
@@ -30,6 +32,7 @@ const statusOptions: Array<{ label: string; value: ConversationStatus | "ALL" }>
   { label: "Atendimento", value: "EM_ATENDIMENTO_HUMANO" },
   { label: "Fechado", value: "FECHADO" },
 ];
+const defaultClosureReasonCode: ClosureReasonCode = "SEM_ELEGIBILIDADE";
 
 type MobilePanel = "inbox" | "chat" | "dossier";
 
@@ -49,7 +52,8 @@ export default function Home() {
   const [username, setUsername] = useState("ana.lima");
   const [password, setPassword] = useState("Ana@123456");
   const [messageDraft, setMessageDraft] = useState("");
-  const [closureReason, setClosureReason] = useState("");
+  const [closureReasonCode, setClosureReasonCode] = useState<ClosureReasonCode>(defaultClosureReasonCode);
+  const [closureReasonDetail, setClosureReasonDetail] = useState("");
 
   const [authLoading, setAuthLoading] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -63,6 +67,16 @@ export default function Home() {
     () => conversations.find((item) => item.conversationId === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const selectedClosureReason = useMemo(
+    () => closureReasonCatalog.find((option) => option.code === closureReasonCode) ?? closureReasonCatalog[0],
+    [closureReasonCode],
+  );
+  const closureReasonDetailRequired = selectedClosureReason?.requiresDetail ?? false;
+  const normalizedClosureReasonDetail = closureReasonDetail.trim();
+  const canCloseConversation =
+    Boolean(selectedConversationId) &&
+    !performingAction &&
+    (!closureReasonDetailRequired || normalizedClosureReasonDetail.length > 0);
   const isAuthenticated = workspace !== null;
 
   if (!convexUrl) {
@@ -281,16 +295,22 @@ export default function Home() {
 
   async function handleCloseConversation() {
     if (!selectedConversationId) return;
-    if (!closureReason.trim()) {
-      setErrorMessage("Informe o motivo do encerramento.");
+    if (!selectedClosureReason) {
+      setErrorMessage("Selecione um motivo de encerramento valido.");
+      return;
+    }
+
+    if (closureReasonDetailRequired && !normalizedClosureReasonDetail) {
+      setErrorMessage("Informe o complemento do motivo selecionado.");
       return;
     }
 
     setPerformingAction(true);
     setErrorMessage(null);
     try {
-      await api.closeConversation(selectedConversationId, closureReason.trim());
-      setClosureReason("");
+      await api.closeConversation(selectedConversationId, selectedClosureReason.code, normalizedClosureReasonDetail || undefined);
+      setClosureReasonCode(defaultClosureReasonCode);
+      setClosureReasonDetail("");
       await loadConversations();
       await loadThread(selectedConversationId, false);
       await loadDossier(selectedConversationId);
@@ -657,20 +677,47 @@ export default function Home() {
                   <label htmlFor="closureReason" className="mt-3 block text-xs font-medium text-zinc-700">
                     Motivo de encerramento
                   </label>
-                  <textarea
+                  <select
                     id="closureReason"
-                    rows={3}
                     className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                    placeholder="Ex: documentacao validada e caso concluido"
-                    value={closureReason}
-                    data-testid="dossier-closure-reason-input"
-                    onChange={(event) => setClosureReason(event.target.value)}
-                  />
+                    value={closureReasonCode}
+                    data-testid="dossier-closure-reason-select"
+                    onChange={(event) => {
+                      const nextCode = event.target.value as ClosureReasonCode;
+                      setClosureReasonCode(nextCode);
+                      const nextOption = closureReasonCatalog.find((option) => option.code === nextCode);
+                      if (!nextOption?.requiresDetail) {
+                        setClosureReasonDetail("");
+                      }
+                    }}
+                  >
+                    {closureReasonCatalog.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedClosureReason?.requiresDetail ? (
+                    <>
+                      <label htmlFor="closureReasonDetail" className="mt-3 block text-xs font-medium text-zinc-700">
+                        {selectedClosureReason.detailLabel ?? "Complemento do motivo"}
+                      </label>
+                      <textarea
+                        id="closureReasonDetail"
+                        rows={3}
+                        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                        placeholder={selectedClosureReason.detailPlaceholder ?? "Descreva o motivo complementar"}
+                        value={closureReasonDetail}
+                        data-testid="dossier-closure-reason-detail-input"
+                        onChange={(event) => setClosureReasonDetail(event.target.value)}
+                      />
+                    </>
+                  ) : null}
                   <button
                     className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
                     onClick={handleCloseConversation}
                     data-testid="dossier-close-button"
-                    disabled={!selectedConversationId || performingAction}
+                    disabled={!canCloseConversation}
                   >
                     Encerrar caso
                   </button>

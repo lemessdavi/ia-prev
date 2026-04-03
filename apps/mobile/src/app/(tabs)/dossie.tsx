@@ -1,14 +1,26 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Linking, Pressable, Share, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
+import { closureReasonCatalog, type ClosureReasonCode } from "utils";
 import { AuthGate } from "@/components/AuthGate";
 import { useOperatorApp } from "@/context/operatorAppContext";
+
+const defaultClosureReasonCode: ClosureReasonCode = "SEM_ELEGIBILIDADE";
 
 export default function DossieScreen() {
   const { dossier, thread, selectedConversationId, loadingDossier, loadingAction, exportDossier, closeConversation, errorMessage } =
     useOperatorApp();
-  const [reason, setReason] = useState("");
+  const [reasonCode, setReasonCode] = useState<ClosureReasonCode>(defaultClosureReasonCode);
+  const [reasonDetail, setReasonDetail] = useState("");
+  const selectedReason = useMemo(
+    () => closureReasonCatalog.find((option) => option.code === reasonCode) ?? closureReasonCatalog[0],
+    [reasonCode],
+  );
+  const reasonDetailRequired = selectedReason?.requiresDetail ?? false;
+  const normalizedReasonDetail = reasonDetail.trim();
+  const canCloseConversation =
+    Boolean(selectedConversationId) && !loadingAction && (!reasonDetailRequired || normalizedReasonDetail.length > 0);
 
   async function handleExport() {
     const payload = await exportDossier();
@@ -21,10 +33,11 @@ export default function DossieScreen() {
   }
 
   async function handleCloseConversation() {
-    const normalized = reason.trim();
-    if (!normalized) return;
-    await closeConversation(normalized);
-    setReason("");
+    if (!selectedReason) return;
+    if (reasonDetailRequired && !normalizedReasonDetail) return;
+    await closeConversation(selectedReason.code, normalizedReasonDetail || undefined);
+    setReasonCode(defaultClosureReasonCode);
+    setReasonDetail("");
   }
 
   return (
@@ -115,33 +128,68 @@ export default function DossieScreen() {
             }}
           >
             <Text style={{ color: tokens.colors.textMuted }}>Encerrar caso com motivo</Text>
-            <TextInput
-              accessibilityLabel="Motivo de encerramento"
-              multiline
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Ex: documentacao validada e caso concluido"
-              style={{
-                marginTop: 8,
-                borderWidth: 1,
-                borderColor: tokens.colors.border,
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                minHeight: 80,
-                textAlignVertical: "top",
-              }}
-            />
+            <View style={{ marginTop: 8, flexDirection: "row", flexWrap: "wrap" }}>
+              {closureReasonCatalog.map((option) => {
+                const isSelected = option.code === reasonCode;
+                return (
+                  <Pressable
+                    key={option.code}
+                    onPress={() => {
+                      setReasonCode(option.code);
+                      if (!option.requiresDetail) {
+                        setReasonDetail("");
+                      }
+                    }}
+                    style={{
+                      marginRight: 8,
+                      marginBottom: 8,
+                      borderWidth: 1,
+                      borderColor: isSelected ? tokens.colors.primary : tokens.colors.border,
+                      backgroundColor: isSelected ? "#dbeafe" : "#ffffff",
+                      borderRadius: 999,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                    }}
+                  >
+                    <Text style={{ color: isSelected ? tokens.colors.primary : tokens.colors.textMuted }}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {selectedReason?.requiresDetail ? (
+              <>
+                <Text style={{ marginTop: 4, color: tokens.colors.textMuted }}>
+                  {selectedReason.detailLabel ?? "Complemento do motivo"}
+                </Text>
+                <TextInput
+                  accessibilityLabel="Complemento do motivo de encerramento"
+                  multiline
+                  value={reasonDetail}
+                  onChangeText={setReasonDetail}
+                  placeholder={selectedReason.detailPlaceholder ?? "Descreva o motivo complementar"}
+                  style={{
+                    marginTop: 8,
+                    borderWidth: 1,
+                    borderColor: tokens.colors.border,
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    minHeight: 80,
+                    textAlignVertical: "top",
+                  }}
+                />
+              </>
+            ) : null}
             <Pressable
               onPress={() => void handleCloseConversation()}
-              disabled={!selectedConversationId || loadingAction || !reason.trim()}
+              disabled={!canCloseConversation}
               style={{
                 marginTop: 10,
                 borderWidth: 1,
                 borderColor: tokens.colors.border,
                 borderRadius: 10,
                 paddingVertical: 10,
-                opacity: !selectedConversationId || loadingAction || !reason.trim() ? 0.6 : 1,
+                opacity: canCloseConversation ? 1 : 0.6,
               }}
             >
               <Text style={{ textAlign: "center" }}>Encerrar caso</Text>

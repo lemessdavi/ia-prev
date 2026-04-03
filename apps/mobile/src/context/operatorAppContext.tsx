@@ -1,6 +1,7 @@
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   BackendApiClientError,
+  type ClosureReasonCode,
   type ConversationInboxItemDTO,
   type ConversationStatus,
   type ConversationThreadPayloadDTO,
@@ -32,7 +33,7 @@ type OperatorAppContextValue = {
   selectConversation: (conversationId: string) => Promise<void>;
   sendMessage: (body: string) => Promise<void>;
   takeHandoff: () => Promise<void>;
-  closeConversation: (reason: string) => Promise<void>;
+  closeConversation: (reasonCode: ClosureReasonCode, reasonDetail?: string) => Promise<void>;
   exportDossier: () => Promise<DossierExportDTO | null>;
   refresh: () => Promise<void>;
 };
@@ -238,12 +239,12 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   }, [loadConversations, loadThread, selectedConversationId, toReadableError]);
 
   const closeConversation = useCallback(
-    async (reason: string) => {
+    async (reasonCode: ClosureReasonCode, reasonDetail?: string) => {
       if (!selectedConversationId) return;
       setLoadingAction(true);
       setErrorMessage(null);
       try {
-        await backendClient.closeConversation(selectedConversationId, reason);
+        await backendClient.closeConversation(selectedConversationId, reasonCode, reasonDetail);
         await loadConversations();
         await loadThread(selectedConversationId, false);
         await loadDossier(selectedConversationId);

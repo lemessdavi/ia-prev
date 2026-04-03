@@ -74,6 +74,17 @@ export default defineSchema({
     ),
     triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO"), v.literal("N_A")),
     closureReason: v.optional(v.string()),
+    closureReasonCode: v.optional(
+      v.union(
+        v.literal("SEM_ELEGIBILIDADE"),
+        v.literal("CLIENTE_INATIVO"),
+        v.literal("DESISTENCIA"),
+        v.literal("ENCAMINHADO"),
+        v.literal("CONVERTIDO"),
+        v.literal("OUTRO"),
+      ),
+    ),
+    closureReasonDetail: v.optional(v.string()),
     title: v.string(),
     lastMessagePreview: v.string(),
     lastMessageAt: v.number(),
