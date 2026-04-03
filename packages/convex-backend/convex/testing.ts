@@ -45,6 +45,16 @@ const deliverySummaryValidator = v.object({
   idempotencyKey: v.string(),
 });
 
+const conversationAuditLogValidator = v.object({
+  tenantId: v.string(),
+  action: v.string(),
+  targetType: v.string(),
+  targetId: v.string(),
+  actorUserId: v.optional(v.string()),
+  details: v.optional(v.string()),
+  createdAt: v.number(),
+});
+
 export const listTenantMessages = internalQuery({
   args: {
     tenantId: v.string(),
@@ -151,5 +161,31 @@ export const listTenantDeliveries = internalQuery({
       externalMessageId: delivery.externalMessageId,
       idempotencyKey: delivery.idempotencyKey,
     }));
+  },
+});
+
+export const listConversationAuditLogs = internalQuery({
+  args: {
+    tenantId: v.string(),
+    conversationId: v.string(),
+  },
+  returns: v.array(conversationAuditLogValidator),
+  handler: async (ctx, args) => {
+    const logs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_tenant_id_and_created_at", (q) => q.eq("tenantId", args.tenantId))
+      .collect();
+
+    return logs
+      .filter((log) => log.targetType === "conversation" && log.targetId === args.conversationId)
+      .map((log) => ({
+        tenantId: log.tenantId,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        actorUserId: log.actorUserId,
+        details: log.details,
+        createdAt: log.createdAt,
+      }));
   },
 });
