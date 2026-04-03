@@ -6,6 +6,7 @@ import schema from "../convex/schema";
 const modules = import.meta.glob("../convex/**/*.{ts,js}");
 
 const seedDemoDataRef = makeFunctionReference<"action">("seedNode:seedDemoData");
+const persistInboundFromN8nRef = makeFunctionReference<"mutation">("n8nBridge:persistInboundFromN8n");
 const loginRef = makeFunctionReference<"action">("authNode:loginWithUsernamePassword");
 const workspaceSummaryRef = makeFunctionReference<"query">("chatDomain:getTenantWorkspaceSummary");
 const listConversationsForInboxRef = makeFunctionReference<"query">("chatDomain:listConversationsForInbox");
@@ -15,8 +16,10 @@ const closeConversationWithReasonRef = makeFunctionReference<"mutation">("chatDo
 const exportConversationDossierRef = makeFunctionReference<"mutation">("chatDomain:exportConversationDossier");
 const listConversationAuditLogsRef = makeFunctionReference<"query">("testing:listConversationAuditLogs");
 
-const handoffWebhookUrl = "https://n8n.local/handoff-notify";
-let previousHandoffWebhookUrl: string | undefined;
+const whatsappAccessToken = "wa_test_access_token";
+let previousWhatsAppAccessToken: string | undefined;
+let previousWhatsAppApiVersion: string | undefined;
+let previousWhatsAppGraphBaseUrl: string | undefined;
 
 async function createSeededTestContext() {
   const t = convexTest(schema, modules);
@@ -30,6 +33,20 @@ async function loginAs(
   password: string,
 ) {
   return await t.action(loginRef, { username, password });
+}
+
+async function createWhatsAppConversation(
+  t: Awaited<ReturnType<typeof createSeededTestContext>>,
+  input: { externalMessageId: string; contactWaId: string; contactDisplayName: string; body: string },
+) {
+  return await t.mutation(persistInboundFromN8nRef, {
+    phoneNumberId: "waba_phone_legal_1",
+    contactWaId: input.contactWaId,
+    contactDisplayName: input.contactDisplayName,
+    externalMessageId: input.externalMessageId,
+    messageType: "text",
+    body: input.body,
+  });
 }
 
 async function expectBusinessError(promise: Promise<unknown>, code: string) {
@@ -48,16 +65,34 @@ async function expectBusinessError(promise: Promise<unknown>, code: string) {
 
 describe("Convex tenant operator workspace flows", () => {
   beforeEach(() => {
-    previousHandoffWebhookUrl = process.env.N8N_HANDOFF_NOTIFY_WEBHOOK_URL;
-    process.env.N8N_HANDOFF_NOTIFY_WEBHOOK_URL = handoffWebhookUrl;
+    previousWhatsAppAccessToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+    previousWhatsAppApiVersion = process.env.WHATSAPP_CLOUD_API_VERSION;
+    previousWhatsAppGraphBaseUrl = process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL;
+
+    process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = whatsappAccessToken;
+    process.env.WHATSAPP_CLOUD_API_VERSION = "v22.0";
+    process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL = "https://graph.facebook.com";
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (typeof previousHandoffWebhookUrl === "string") {
-      process.env.N8N_HANDOFF_NOTIFY_WEBHOOK_URL = previousHandoffWebhookUrl;
+
+    if (typeof previousWhatsAppAccessToken === "string") {
+      process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = previousWhatsAppAccessToken;
     } else {
-      delete process.env.N8N_HANDOFF_NOTIFY_WEBHOOK_URL;
+      delete process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+    }
+
+    if (typeof previousWhatsAppApiVersion === "string") {
+      process.env.WHATSAPP_CLOUD_API_VERSION = previousWhatsAppApiVersion;
+    } else {
+      delete process.env.WHATSAPP_CLOUD_API_VERSION;
+    }
+
+    if (typeof previousWhatsAppGraphBaseUrl === "string") {
+      process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL = previousWhatsAppGraphBaseUrl;
+    } else {
+      delete process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL;
     }
   });
 
@@ -134,6 +169,12 @@ describe("Convex tenant operator workspace flows", () => {
   it("takes handoff, sends WhatsApp notification and persists audit trail", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
+    const inbound = await createWhatsAppConversation(t, {
+      externalMessageId: "wamid-handoff-success",
+      contactWaId: "5548991313199",
+      contactDisplayName: "Contato Handoff",
+      body: "Oi, preciso falar com atendente humano.",
+    });
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
@@ -141,27 +182,32 @@ describe("Convex tenant operator workspace flows", () => {
 
     const result = await t.action(takeConversationHandoffRef, {
       sessionToken: session.sessionToken,
-      conversationId: "conv_ana_caio",
+      conversationId: inbound.conversationId,
     });
 
-    expect(result.conversationId).toBe("conv_ana_caio");
+    expect(result.conversationId).toBe(inbound.conversationId);
     expect(result.conversationStatus).toBe("EM_ATENDIMENTO_HUMANO");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     const [url, init] = fetchSpy.mock.calls[0] ?? [];
-    expect(url).toBe(handoffWebhookUrl);
+    expect(url).toBe("https://graph.facebook.com/v22.0/waba_phone_legal_1/messages");
+    expect((init as RequestInit | undefined)?.headers).toMatchObject({
+      Authorization: `Bearer ${whatsappAccessToken}`,
+      "content-type": "application/json",
+    });
     const payload = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")) as Record<string, unknown>;
     expect(payload).toMatchObject({
-      conversationId: "conv_ana_caio",
-      tenantId: "tenant_legal",
-      operatorUserId: "usr_ana",
-      operatorName: "Ana Lima",
-      message: expectedMessage,
+      messaging_product: "whatsapp",
+      to: "5548991313199",
+      type: "text",
+      text: {
+        body: expectedMessage,
+      },
     });
 
     const thread = await t.query(getConversationThreadRef, {
       sessionToken: session.sessionToken,
-      conversationId: "conv_ana_caio",
+      conversationId: inbound.conversationId,
     });
     expect(thread.conversationStatus).toBe("EM_ATENDIMENTO_HUMANO");
     expect(thread.handoffEvents.some((item: { to: string; performedByUserId?: string }) => item.to === "human" && item.performedByUserId === "usr_ana")).toBe(
@@ -171,7 +217,7 @@ describe("Convex tenant operator workspace flows", () => {
 
     const audits = await t.query(listConversationAuditLogsRef, {
       tenantId: "tenant_legal",
-      conversationId: "conv_ana_caio",
+      conversationId: inbound.conversationId,
     });
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.taken")).toBe(true);
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.whatsapp_notification.sent")).toBe(true);
@@ -180,20 +226,26 @@ describe("Convex tenant operator workspace flows", () => {
   it("fails handoff when WhatsApp notification fails and writes failure audit", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
+    const inbound = await createWhatsAppConversation(t, {
+      externalMessageId: "wamid-handoff-fail",
+      contactWaId: "5511998877665",
+      contactDisplayName: "Contato Falha",
+      body: "Preciso de ajuda com meu caso.",
+    });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("gateway offline", { status: 502 }));
     const expectedMessage = "Ana Lima assumiu a conversa e continuará seu atendimento por aqui.";
 
     await expectBusinessError(
       t.action(takeConversationHandoffRef, {
         sessionToken: session.sessionToken,
-        conversationId: "conv_ana_marina",
+        conversationId: inbound.conversationId,
       }),
       "BAD_REQUEST",
     );
 
     const thread = await t.query(getConversationThreadRef, {
       sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
+      conversationId: inbound.conversationId,
     });
     expect(thread.conversationStatus).toBe("EM_TRIAGEM");
     expect(thread.handoffEvents).toHaveLength(0);
@@ -201,7 +253,7 @@ describe("Convex tenant operator workspace flows", () => {
 
     const audits = await t.query(listConversationAuditLogsRef, {
       tenantId: "tenant_legal",
-      conversationId: "conv_ana_marina",
+      conversationId: inbound.conversationId,
     });
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.taken")).toBe(false);
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.taken.failed")).toBe(true);

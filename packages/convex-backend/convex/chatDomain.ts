@@ -40,6 +40,8 @@ const handoffPreparationValidator = v.object({
   conversationId: v.string(),
   operatorUserId: v.string(),
   operatorName: v.string(),
+  phoneNumberId: v.string(),
+  recipientWaId: v.string(),
   notificationMessage: v.string(),
 });
 
@@ -102,6 +104,14 @@ function resolveContactId(participantIds: string[], currentUserId: string): stri
 
 function buildHandoffNotificationMessage(operatorName: string): string {
   return `${operatorName} assumiu a conversa e continuará seu atendimento por aqui.`;
+}
+
+function sanitizeIdPart(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (normalized.length === 0) {
+    return "x";
+  }
+  return normalized.slice(0, 80);
 }
 
 function toInlineAttachment(messageId: string, attachmentUrl?: string): {
@@ -550,6 +560,53 @@ export const prepareConversationHandoff = internalQuery({
       });
     }
 
+    const contactId = resolveContactId(conversation.participantIds, session.userId);
+    if (!contactId.startsWith("wa_contact_")) {
+      throwBusinessError("BAD_REQUEST", "Conversation is not linked to a WhatsApp contact.", {
+        tenantId: session.tenantId,
+        conversationId,
+        contactId,
+      });
+    }
+
+    const recipientWaId = contactId.slice("wa_contact_".length);
+    if (!recipientWaId) {
+      throwBusinessError("BAD_REQUEST", "Conversation WhatsApp contact is invalid.", {
+        tenantId: session.tenantId,
+        conversationId,
+      });
+    }
+
+    const activeMappings = (
+      await ctx.db
+        .query("wabaTenantMappings")
+        .withIndex("by_tenant", (q: any) => q.eq("tenantId", session.tenantId))
+        .collect()
+    ).filter((mapping: any) => mapping.isActive);
+
+    if (activeMappings.length === 0) {
+      throwBusinessError("NOT_FOUND", "No active WABA mapping found for tenant.", {
+        tenantId: session.tenantId,
+      });
+    }
+
+    let selectedMapping = activeMappings[0];
+    if (activeMappings.length > 1) {
+      const matchingMappings = activeMappings.filter((mapping: any) =>
+        conversationId.includes(`_${sanitizeIdPart(mapping.phoneNumberId)}_`),
+      );
+
+      if (matchingMappings.length !== 1) {
+        throwBusinessError("BAD_REQUEST", "Unable to resolve WABA mapping for conversation.", {
+          tenantId: session.tenantId,
+          conversationId,
+          mappingCount: activeMappings.length,
+        });
+      }
+
+      selectedMapping = matchingMappings[0];
+    }
+
     const operator = await findUserByUserId(ctx.db, session.userId);
     if (!operator) {
       throwBusinessError("UNAUTHENTICATED", "Operator was not found for this session.", {
@@ -562,6 +619,8 @@ export const prepareConversationHandoff = internalQuery({
       conversationId,
       operatorUserId: session.userId,
       operatorName: operator.fullName,
+      phoneNumberId: selectedMapping.phoneNumberId,
+      recipientWaId,
       notificationMessage: buildHandoffNotificationMessage(operator.fullName),
     };
   },

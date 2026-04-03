@@ -11,6 +11,8 @@ type PreparedHandoff = {
   conversationId: string;
   operatorUserId: string;
   operatorName: string;
+  phoneNumberId: string;
+  recipientWaId: string;
   notificationMessage: string;
 };
 
@@ -42,30 +44,31 @@ function toErrorReason(error: unknown): string {
   return "unknown_error";
 }
 
-async function sendHandoffNotificationToWebhook(input: {
-  webhookUrl: string;
-  integrationSecret?: string;
+async function sendHandoffNotificationToWhatsApp(input: {
+  accessToken: string;
+  apiVersion: string;
+  graphBaseUrl: string;
   prepared: PreparedHandoff;
 }): Promise<void> {
-  const headers: Record<string, string> = {
+  const headers = {
+    Authorization: `Bearer ${input.accessToken}`,
     "content-type": "application/json",
   };
 
-  if (input.integrationSecret) {
-    headers["x-n8n-integration-secret"] = input.integrationSecret;
-  }
+  const endpoint = `${input.graphBaseUrl}/${input.apiVersion}/${encodeURIComponent(input.prepared.phoneNumberId)}/messages`;
 
   let response: Response;
   try {
-    response = await fetch(input.webhookUrl, {
+    response = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        conversationId: input.prepared.conversationId,
-        tenantId: input.prepared.tenantId,
-        operatorUserId: input.prepared.operatorUserId,
-        operatorName: input.prepared.operatorName,
-        message: input.prepared.notificationMessage,
+        messaging_product: "whatsapp",
+        to: input.prepared.recipientWaId,
+        type: "text",
+        text: {
+          body: input.prepared.notificationMessage,
+        },
       }),
     });
   } catch (error) {
@@ -94,17 +97,19 @@ export const takeConversationHandoff = action({
       conversationId: args.conversationId,
     });
 
-    const webhookUrl = process.env.N8N_HANDOFF_NOTIFY_WEBHOOK_URL?.trim();
-    const integrationSecret = process.env.N8N_INTEGRATION_SECRET?.trim();
+    const accessToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN?.trim();
+    const apiVersion = process.env.WHATSAPP_CLOUD_API_VERSION?.trim() || "v22.0";
+    const graphBaseUrl = (process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL?.trim() || "https://graph.facebook.com").replace(/\/+$/, "");
 
     try {
-      if (!webhookUrl) {
-        throw new Error("config_missing:N8N_HANDOFF_NOTIFY_WEBHOOK_URL");
+      if (!accessToken) {
+        throw new Error("config_missing:WHATSAPP_CLOUD_ACCESS_TOKEN");
       }
 
-      await sendHandoffNotificationToWebhook({
-        webhookUrl,
-        integrationSecret,
+      await sendHandoffNotificationToWhatsApp({
+        accessToken,
+        apiVersion,
+        graphBaseUrl,
         prepared,
       });
     } catch (error) {
