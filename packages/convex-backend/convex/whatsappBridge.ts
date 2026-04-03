@@ -274,7 +274,7 @@ async function findMessageByMessageId(ctx: any, messageId: string) {
     .unique();
 }
 
-export const persistInboundFromN8n = internalMutation({
+export const persistInboundFromWebhook = internalMutation({
   args: {
     phoneNumberId: v.string(),
     contactWaId: v.string(),
@@ -364,7 +364,7 @@ export const persistInboundFromN8n = internalMutation({
   },
 });
 
-export const persistOutboundFromN8n = internalMutation({
+export const persistOutboundMessage = internalMutation({
   args: {
     phoneNumberId: v.string(),
     conversationId: v.string(),

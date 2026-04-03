@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
+import { resolveThreadMessageOrigin, shouldRenderMessageOnRight } from "utils";
 import { AuthGate } from "@/components/AuthGate";
 import { useOperatorApp } from "@/context/operatorAppContext";
 
@@ -46,9 +47,15 @@ export default function ChatScreen() {
             <Text style={{ color: tokens.colors.textMuted }}>Carregando mensagens...</Text>
           ) : thread?.messages.length ? (
             thread.messages.map((message) => {
-              const sentByOperator = message.senderId === workspace?.operator.userId;
+              const operatorUserId = workspace?.operator.userId ?? "";
+              const messageOrigin = resolveThreadMessageOrigin(message.senderId, operatorUserId);
+              const isOwn = shouldRenderMessageOnRight(message.senderId, operatorUserId);
+              const isAssistant = messageOrigin === "assistant";
               return (
-                <View key={message.id} style={{ alignSelf: sentByOperator ? "flex-start" : "flex-end", maxWidth: "82%" }}>
+                <View key={message.id} style={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: "82%" }}>
+                  {isAssistant ? (
+                    <Text style={{ marginBottom: 4, fontSize: 11, fontWeight: "600", color: tokens.colors.textMuted }}>🤖 IA</Text>
+                  ) : null}
                   <View
                     style={{
                       backgroundColor: tokens.colors.panel,

@@ -21,6 +21,12 @@ pnpm dev              # Start all apps
 
 This repository now runs web/mobile against Convex as the primary runtime.
 
+WhatsApp processing flow is direct and does not use external orchestration:
+
+- Meta WhatsApp Webhook -> Convex (`/webhooks/waba`)
+- Convex -> OpenAI
+- Convex -> WhatsApp Cloud API
+
 1. Configure backend env:
    - Copy `packages/convex-backend/.env.example` and set `CONVEX_DEPLOYMENT`.
 2. Configure frontend envs:

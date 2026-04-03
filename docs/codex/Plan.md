@@ -1,155 +1,63 @@
-# Plan - Milestones de Execucao
+# Plan - Fluxo Direto WhatsApp
 
-Date: 2026-03-27  
-Status: draft aprovado para execucao automatizada
+Date: 2026-03-30
+Status: vigente
 
-## Regras de execucao
+## Objetivo
 
-- Seguir ordem de milestones.
-- Nao pular validacao.
-- Se alguma validacao falhar: parar, corrigir, revalidar, so entao avancar.
-- Registrar cada passo em `docs/codex/Documentation.md`.
+Manter o fluxo operacional direto:
 
-## Milestone 0 - Baseline e diagnostico
+1. Meta WhatsApp Webhook recebe inbound.
+2. Convex processa e persiste em `chatDomain`.
+3. Convex chama OpenAI para gerar resposta.
+4. Convex envia outbound via WhatsApp Cloud API.
+5. Convex persiste outbound na mesma conversa.
 
-### Objetivo
+## Milestones
 
-Consolidar estado atual, confirmar gaps reais e preparar trilha de alteracoes.
+### M0 - Ingestao webhook
 
-### Criterios de aceite
+- `POST /webhooks/waba` processa payload e preserva isolamento tenant-aware.
+- Fail-closed para `phone_number_id` desconhecido.
+- Idempotencia de inbound preservada.
 
-- Gaps de Fase 4/5 listados com precisao (codigo + impacto).
-- Estrategia de ponte `waba* -> surface operacional` decidida e registrada.
-
-### Validacao
-
-```bash
-git status --short
-rg -n "waba|conversations|messages|attachments|webhooks/waba" packages/convex-backend -S
-```
-
-## Milestone 1 - Inbound real tenant-aware para surface da UI
-
-### Objetivo
-
-Garantir que inbound WA processado pelo webhook apareca no dominio usado por web/mobile.
-
-### Criterios de aceite
-
-- Inbound processado cria/atualiza conversa e mensagem no dominio lido pela UI.
-- Isolamento tenant-aware preservado.
-- Idempotencia preservada.
-
-### Validacao
-
-```bash
-pnpm --filter @repo/convex-backend typecheck
-pnpm --filter @repo/convex-backend test
-```
-
-## Milestone 2 - Outbound IA + persistencia de resposta
-
-### Objetivo
-
-Fechar loop IA + envio WA + persistencia outbound no Convex.
-
-### Criterios de aceite
-
-- Endpoint/funcoes para registrar outbound da IA.
-- Resposta enviada ao WhatsApp e registrada na thread correta.
-- Status de conversa atualizado conforme fluxo.
-- Dois modos de IA suportados:
-  - `live` (provider real configurado)
-  - `mock` (sem dependencia de credencial externa)
-
-### Validacao
-
-```bash
-pnpm --filter @repo/convex-backend typecheck
-pnpm --filter @repo/convex-backend test
-```
-
-## Milestone 2.1 - Fallback IA mock-ready
-
-### Objetivo
-
-Permitir execucao integral do projeto sem credencial de IA, mantendo contrato compativel com modo live.
-
-### Criterios de aceite
-
-- Workflow n8n responde com mock deterministico quando `live` indisponivel.
-- Contrato de entrada/saida do mock e compativel com provider real.
-- Troca `mock -> live` documentada e sem alteracao estrutural no pipeline.
-
-### Validacao
+Validacao:
 
 ```bash
 pnpm --filter @repo/convex-backend test
 ```
 
-## Milestone 3 - Workflows n8n finais (importaveis)
+### M1 - Resposta automatica
 
-### Objetivo
+- Auto-reply por OpenAI com fallback mock.
+- Envio WhatsApp Cloud API sem componente intermediario.
 
-Entregar fluxo n8n completo de producao para este escopo.
-
-### Criterios de aceite
-
-- JSON importavel para:
-  - inbound trigger
-  - call Convex inbound
-  - call IA (`live` ou `mock`)
-  - send WA outbound
-  - call Convex outbound
-- README operacional atualizado com campos obrigatorios.
-
-### Validacao
+Validacao:
 
 ```bash
-jq . docs/n8n/*.json >/dev/null
+pnpm --filter @repo/convex-backend test
 ```
 
-## Milestone 4 - Integracao web/mobile e consistencia de dados
+### M2 - Superficies web/mobile
 
-### Objetivo
+- Inbox/thread refletem inbound e outbound persistidos no `chatDomain`.
 
-Garantir que UI consuma corretamente o que pipeline real persiste.
-
-### Criterios de aceite
-
-- Inbox e thread refletem inbound/outbound reais.
-- Sem regressao no fluxo de operador (handoff/close/export).
-
-### Validacao
+Validacao:
 
 ```bash
 pnpm --filter web typecheck || true
 pnpm --filter mobile typecheck || true
-pnpm --filter @repo/convex-backend test
 ```
 
-## Milestone 5 - Hardening, docs finais e handoff
+### M3 - Hardening
 
-### Objetivo
+- Typecheck backend verde.
+- Suite backend verde.
+- Documentacao alinhada com fluxo direto.
 
-Consolidar release tecnico: evidencias, runbook e proximos passos.
-
-### Criterios de aceite
-
-- `docs/codex/Documentation.md` completo.
-- Instrucoes de deploy/teste n8n + Convex reproduziveis.
-- Lista curta de riscos remanescentes e follow-ups.
-
-### Validacao final
+Validacao:
 
 ```bash
-pnpm -r typecheck || true
-pnpm -r test || true
+pnpm --filter @repo/convex-backend typecheck
+pnpm --filter @repo/convex-backend test
 ```
-
-## Dependencias externas (necessarias para E2E real)
-
-- Credenciais WhatsApp Cloud validas (token, WABA ID, phone number id).
-- Credenciais n8n (WhatsApp API + WhatsApp OAuth API).
-- URL publica para webhook do n8n em modo production.
-- Chave de IA (opcional para esta rodada; obrigatoria apenas para modo `live`).

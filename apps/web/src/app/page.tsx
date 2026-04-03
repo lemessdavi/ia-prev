@@ -1,13 +1,15 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api as convexApi } from "@repo/convex-backend";
 import { tokens } from "config";
+import { useQuery } from "convex/react";
 import {
   BackendApiClientError,
   createBackendApiClient,
-  type ConversationInboxItemDTO,
+  resolveThreadMessageOrigin,
+  shouldRenderMessageOnRight,
   type ConversationStatus,
-  type ConversationThreadPayloadDTO,
   type DossierExportDTO,
   type TenantWorkspaceSummaryDTO,
 } from "utils";
@@ -31,13 +33,14 @@ const statusOptions: Array<{ label: string; value: ConversationStatus | "ALL" }>
   { label: "Fechado", value: "FECHADO" },
 ];
 
+const CHAT_BOTTOM_THRESHOLD_PX = 72;
+
 type MobilePanel = "inbox" | "chat" | "dossier";
 
 export default function Home() {
   const [isHydrated, setIsHydrated] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<TenantWorkspaceSummaryDTO | null>(null);
-  const [conversations, setConversations] = useState<ConversationInboxItemDTO[]>([]);
-  const [thread, setThread] = useState<ConversationThreadPayloadDTO | null>(null);
   const [dossier, setDossier] = useState<DossierExportDTO | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("inbox");
@@ -52,18 +55,50 @@ export default function Home() {
   const [closureReason, setClosureReason] = useState("");
 
   const [authLoading, setAuthLoading] = useState(false);
-  const [loadingConversations, setLoadingConversations] = useState(false);
-  const [loadingThread, setLoadingThread] = useState(false);
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
+  const [hasUnreadMessagesOutOfView, setHasUnreadMessagesOutOfView] = useState(false);
 
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const isChatPinnedToBottomRef = useRef(true);
+  const previousThreadSnapshotRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
+    conversationId: null,
+    messageCount: 0,
+    lastMessageId: null,
+  });
+
+  const isAuthenticated = workspace !== null;
+  const conversationsQuery = useQuery(
+    convexApi.chat.listConversationsForInbox,
+    isAuthenticated && sessionToken
+      ? {
+          sessionToken,
+          status: statusFilter,
+          search,
+        }
+      : "skip",
+  );
+  const thread = useQuery(
+    convexApi.chat.getConversationThread,
+    isAuthenticated && sessionToken && selectedConversationId
+      ? {
+          sessionToken,
+          conversationId: selectedConversationId,
+        }
+      : "skip",
+  );
+  const conversations = conversationsQuery ?? [];
+  const loadingConversations = isAuthenticated && conversationsQuery === undefined;
+  const loadingThread = Boolean(isAuthenticated && selectedConversationId && thread === undefined);
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.conversationId === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
-  const isAuthenticated = workspace !== null;
+  const threadMessageCount = thread?.messages.length ?? 0;
+  const threadLastMessageId = thread?.messages[threadMessageCount - 1]?.id ?? null;
 
   if (!convexUrl) {
     return (
@@ -81,12 +116,11 @@ export default function Home() {
 
   const clearSession = useCallback(() => {
     api.setSessionToken(null);
+    setSessionToken(null);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(TOKEN_STORAGE_KEY);
     }
     setWorkspace(null);
-    setConversations([]);
-    setThread(null);
     setDossier(null);
     setSelectedConversationId(null);
     setMobilePanel("inbox");
@@ -110,44 +144,6 @@ export default function Home() {
     setWorkspace(data);
   }, []);
 
-  const loadConversations = useCallback(async () => {
-    setLoadingConversations(true);
-    try {
-      const rows = await api.listConversations({
-        status: statusFilter,
-        search,
-      });
-      setConversations(rows);
-      if (!selectedConversationId && rows[0]) {
-        setSelectedConversationId(rows[0].conversationId);
-      } else if (selectedConversationId && !rows.some((row) => row.conversationId === selectedConversationId)) {
-        setSelectedConversationId(rows[0]?.conversationId ?? null);
-      }
-    } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
-    } finally {
-      setLoadingConversations(false);
-    }
-  }, [search, selectedConversationId, statusFilter, toReadableError]);
-
-  const loadThread = useCallback(
-    async (conversationId: string, markRead: boolean) => {
-      setLoadingThread(true);
-      try {
-        if (markRead) {
-          await api.markConversationAsRead(conversationId);
-        }
-        const data = await api.getConversationThread(conversationId);
-        setThread(data);
-      } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar chat da conversa."));
-      } finally {
-        setLoadingThread(false);
-      }
-    },
-    [toReadableError],
-  );
-
   const loadDossier = useCallback(
     async (conversationId: string) => {
       setLoadingDossier(true);
@@ -162,6 +158,37 @@ export default function Home() {
     },
     [toReadableError],
   );
+
+  const isNearBottom = useCallback((element: HTMLDivElement) => {
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= CHAT_BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = chatScrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  }, []);
+
+  const handleChatScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const pinnedToBottom = isNearBottom(event.currentTarget);
+      if (isChatPinnedToBottomRef.current !== pinnedToBottom) {
+        isChatPinnedToBottomRef.current = pinnedToBottom;
+        setIsChatPinnedToBottom(pinnedToBottom);
+      }
+      if (pinnedToBottom) {
+        setHasUnreadMessagesOutOfView(false);
+      }
+    },
+    [isNearBottom],
+  );
+
+  const handleJumpToLatestMessages = useCallback(() => {
+    isChatPinnedToBottomRef.current = true;
+    setIsChatPinnedToBottom(true);
+    setHasUnreadMessagesOutOfView(false);
+    scrollChatToBottom("smooth");
+  }, [scrollChatToBottom]);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -179,6 +206,7 @@ export default function Home() {
     if (!existingToken) return;
 
     api.setSessionToken(existingToken);
+    setSessionToken(existingToken);
     setErrorMessage(null);
     void (async () => {
       try {
@@ -191,32 +219,92 @@ export default function Home() {
   }, [clearSession, loadWorkspace, toReadableError]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    void loadConversations();
-  }, [isAuthenticated, loadConversations]);
+    if (!isAuthenticated || !conversationsQuery) return;
+    if (!selectedConversationId && conversationsQuery[0]) {
+      setSelectedConversationId(conversationsQuery[0].conversationId);
+      return;
+    }
+    if (selectedConversationId && !conversationsQuery.some((row) => row.conversationId === selectedConversationId)) {
+      setSelectedConversationId(conversationsQuery[0]?.conversationId ?? null);
+    }
+  }, [conversationsQuery, isAuthenticated, selectedConversationId]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
-      setThread(null);
       setDossier(null);
       return;
     }
 
-    void loadThread(selectedConversationId, true);
+    setErrorMessage(null);
+    void api.markConversationAsRead(selectedConversationId).catch((error: unknown) => {
+      setErrorMessage(toReadableError(error, "Falha ao marcar conversa como lida."));
+    });
     void loadDossier(selectedConversationId);
-  }, [isAuthenticated, loadDossier, loadThread, selectedConversationId]);
+  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    const timer = window.setInterval(() => {
-      void loadConversations();
-      if (selectedConversationId) {
-        void loadThread(selectedConversationId, false);
-      }
-    }, 6000);
+    if (!selectedConversationId) {
+      setHasUnreadMessagesOutOfView(false);
+      isChatPinnedToBottomRef.current = true;
+      setIsChatPinnedToBottom(true);
+    }
+  }, [selectedConversationId]);
 
-    return () => window.clearInterval(timer);
-  }, [isAuthenticated, loadConversations, loadThread, selectedConversationId]);
+  useEffect(() => {
+    const previous = previousThreadSnapshotRef.current;
+    const conversationChanged = previous.conversationId !== selectedConversationId;
+    const newMessagesOnSameConversation =
+      previous.conversationId === selectedConversationId &&
+      (threadMessageCount > previous.messageCount ||
+        (threadMessageCount > 0 && threadMessageCount === previous.messageCount && threadLastMessageId !== previous.lastMessageId));
+
+    const updateSnapshot = () => {
+      previousThreadSnapshotRef.current = {
+        conversationId: selectedConversationId,
+        messageCount: threadMessageCount,
+        lastMessageId: threadLastMessageId,
+      };
+    };
+
+    if (conversationChanged) {
+      isChatPinnedToBottomRef.current = true;
+      setIsChatPinnedToBottom(true);
+      setHasUnreadMessagesOutOfView(false);
+      updateSnapshot();
+      if (!selectedConversationId) return;
+      if (typeof window === "undefined") return;
+      const raf = window.requestAnimationFrame(() => {
+        scrollChatToBottom("auto");
+      });
+      return () => window.cancelAnimationFrame(raf);
+    }
+
+    if (newMessagesOnSameConversation) {
+      updateSnapshot();
+      if (isChatPinnedToBottomRef.current) {
+        if (typeof window === "undefined") return;
+        const raf = window.requestAnimationFrame(() => {
+          scrollChatToBottom("smooth");
+        });
+        return () => window.cancelAnimationFrame(raf);
+      }
+      setHasUnreadMessagesOutOfView(true);
+      return;
+    }
+
+    updateSnapshot();
+  }, [scrollChatToBottom, selectedConversationId, threadLastMessageId, threadMessageCount]);
+
+  useEffect(() => {
+    if (mobilePanel !== "chat") return;
+    if (!isChatPinnedToBottomRef.current) return;
+    if (!selectedConversationId) return;
+    if (typeof window === "undefined") return;
+    const raf = window.requestAnimationFrame(() => {
+      scrollChatToBottom("auto");
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [mobilePanel, scrollChatToBottom, selectedConversationId]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -228,6 +316,7 @@ export default function Home() {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(TOKEN_STORAGE_KEY, response.sessionToken);
       }
+      setSessionToken(response.sessionToken);
       await loadWorkspace();
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha no login."));
@@ -255,8 +344,6 @@ export default function Home() {
     try {
       await api.sendMessage(selectedConversationId, messageDraft.trim());
       setMessageDraft("");
-      await loadThread(selectedConversationId, false);
-      await loadConversations();
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
     } finally {
@@ -270,8 +357,6 @@ export default function Home() {
     setErrorMessage(null);
     try {
       await api.takeHandoff(selectedConversationId);
-      await loadConversations();
-      await loadThread(selectedConversationId, false);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
     } finally {
@@ -291,8 +376,6 @@ export default function Home() {
     try {
       await api.closeConversation(selectedConversationId, closureReason.trim());
       setClosureReason("");
-      await loadConversations();
-      await loadThread(selectedConversationId, false);
       await loadDossier(selectedConversationId);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao encerrar caso."));
@@ -326,18 +409,18 @@ export default function Home() {
             <div className="relative flex h-full flex-col justify-between p-10 text-white">
               <div>
                 <p className="inline-flex rounded-full border border-white/40 px-3 py-1 text-xs uppercase tracking-[0.2em]">
-                  IA Prev Console
+                  IA Prev
                 </p>
-                <h1 className="mt-5 max-w-sm text-4xl font-semibold leading-tight">Atendimento humano com contexto tenant-aware.</h1>
+                <h1 className="mt-5 max-w-sm text-4xl font-semibold leading-tight">Atendimento por IA com você sob controle.</h1>
               </div>
               <p className="max-w-sm text-sm text-blue-100">
-                Web e mobile conectados ao backend real, com isolamento por tenant, handoff, anexos e dossie operacional.
+                Multiplataforma, avaliação de prospects, handoff, anexos e dossie operacional.
               </p>
             </div>
           </section>
           <section className="p-6 md:p-10" style={{ backgroundColor: "#fafafa" }} aria-label="Login do operador">
             <h2 className="text-3xl font-semibold">Entrar</h2>
-            <p className="mt-2 text-sm text-zinc-500">Use um tenant_user valido para abrir a mesa de operacao.</p>
+            <p className="mt-2 text-sm text-zinc-500">Use um usuário valido para abrir a mesa de operacao.</p>
             <form className="mt-8 space-y-4" onSubmit={handleLogin} data-testid="login-form">
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Usuario</span>
@@ -513,7 +596,7 @@ export default function Home() {
             </section>
 
             <section
-              className={`${mobilePanel === "chat" ? "flex" : "hidden"} h-full min-h-0 flex-col border-zinc-200 bg-white lg:col-span-5 lg:flex lg:border-r`}
+              className={`${mobilePanel === "chat" ? "flex" : "hidden"} relative h-full min-h-0 flex-col border-zinc-200 bg-white lg:col-span-5 lg:flex lg:border-r`}
               aria-label="Chat da conversa"
             >
               <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-4">
@@ -534,17 +617,40 @@ export default function Home() {
                   Assumir conversa
                 </button>
               </header>
-              <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+              <div
+                ref={chatScrollContainerRef}
+                className="min-h-0 flex-1 space-y-4 overflow-auto overscroll-y-contain p-4"
+                data-testid="chat-messages-scroll-container"
+                onScroll={handleChatScroll}
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
+                aria-label="Historico da conversa"
+              >
                 {loadingThread ? (
                   <p className="text-sm text-zinc-500" data-testid="thread-loading-state">
                     Carregando mensagens...
                   </p>
                 ) : thread?.messages.length ? (
                   thread.messages.map((message) => {
-                    const isOwn = message.senderId === workspace.operator.userId;
+                    const messageOrigin = resolveThreadMessageOrigin(message.senderId, workspace.operator.userId);
+                    const isOwn = shouldRenderMessageOnRight(message.senderId, workspace.operator.userId);
+                    const isAssistant = messageOrigin === "assistant";
                     return (
-                      <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`} data-testid={`thread-message-${message.id}`}>
+                      <div
+                        key={message.id}
+                        className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
+                        data-testid={`thread-message-${message.id}`}
+                        data-message-origin={messageOrigin}
+                        data-message-side={isOwn ? "right" : "left"}
+                      >
                         <div className={`max-w-[86%] rounded-2xl border px-4 py-3 text-sm ${isOwn ? "bg-zinc-900 text-white" : "bg-zinc-50 text-zinc-900"}`}>
+                          {isAssistant ? (
+                            <p className={`mb-2 flex items-center gap-1 text-[11px] font-semibold ${isOwn ? "text-zinc-300" : "text-zinc-500"}`}>
+                              <span aria-hidden>🤖</span>
+                              <span data-testid={`thread-message-ai-badge-${message.id}`}>IA</span>
+                            </p>
+                          ) : null}
                           <p>{message.body}</p>
                           {message.attachment ? (
                             <a
@@ -566,6 +672,16 @@ export default function Home() {
                   <p className="text-sm text-zinc-500">Sem mensagens para exibir.</p>
                 )}
               </div>
+              {hasUnreadMessagesOutOfView && !isChatPinnedToBottom ? (
+                <button
+                  type="button"
+                  className="absolute bottom-24 right-4 z-10 rounded-full bg-zinc-900 px-3 py-2 text-xs font-medium text-white shadow-lg"
+                  data-testid="chat-scroll-to-latest-button"
+                  onClick={handleJumpToLatestMessages}
+                >
+                  Ver mensagens novas
+                </button>
+              ) : null}
               <footer className="border-t border-zinc-200 p-4">
                 <form className="flex items-end gap-2" onSubmit={handleSendMessage} data-testid="chat-send-form">
                   <input

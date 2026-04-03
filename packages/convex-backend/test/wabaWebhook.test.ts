@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.{ts,js}");
+const seedDemoDataRef = makeFunctionReference<"action">("seedNode:seedDemoData");
+const loginRef = makeFunctionReference<"action">("authNode:loginWithUsernamePassword");
+const listConversationsForInboxRef = makeFunctionReference<"query">("chatDomain:listConversationsForInbox");
+const getConversationThreadRef = makeFunctionReference<"query">("chatDomain:getConversationThread");
 const upsertTenantWabaMappingRef = makeFunctionReference<"mutation">("wabaWebhook:upsertTenantWabaMapping");
 const listAuditByPhoneNumberRef = makeFunctionReference<"query">("testing:listAuditByPhoneNumber");
 const listTenantAttachmentsRef = makeFunctionReference<"query">("testing:listTenantAttachments");
@@ -122,6 +126,38 @@ async function postWebhookWithSignature(
 
   const body = (await response.json()) as any;
   return { response, body };
+}
+
+async function withDirectAutoReplyEnv(run: () => Promise<void>) {
+  const previousOpenAiKey = process.env.OPENAI_API_KEY;
+  const previousWhatsappToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+  const previousModel = process.env.OPENAI_MODEL;
+
+  process.env.OPENAI_API_KEY = "openai_test_key";
+  process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = "wa_test_token";
+  process.env.OPENAI_MODEL = "gpt-4.1-mini";
+
+  try {
+    await run();
+  } finally {
+    if (typeof previousOpenAiKey === "string") {
+      process.env.OPENAI_API_KEY = previousOpenAiKey;
+    } else {
+      delete process.env.OPENAI_API_KEY;
+    }
+
+    if (typeof previousWhatsappToken === "string") {
+      process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = previousWhatsappToken;
+    } else {
+      delete process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+    }
+
+    if (typeof previousModel === "string") {
+      process.env.OPENAI_MODEL = previousModel;
+    } else {
+      delete process.env.OPENAI_MODEL;
+    }
+  }
 }
 
 describe("WABA webhook ingestion (Convex native)", () => {
@@ -468,5 +504,96 @@ describe("WABA webhook ingestion (Convex native)", () => {
     expect(tenantASpecial).toHaveLength(1);
     expect(tenantBSpecial).toHaveLength(1);
     expect(tenantASpecial[0]?.idempotencyKey).not.toBe(tenantBSpecial[0]?.idempotencyKey);
+  });
+
+  it("processes Meta webhook directly to chatDomain and auto replies without external orchestrator", async () => {
+    await withDirectAutoReplyEnv(async () => {
+      const originalFetch = globalThis.fetch;
+      const openAiCalls: string[] = [];
+      const whatsappCalls: string[] = [];
+
+      globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+        if (url === "https://api.openai.com/v1/responses") {
+          openAiCalls.push(url);
+          return new Response(
+            JSON.stringify({
+              output_text: "Sou o assistente especialista. Pode me enviar CPF e data de nascimento para iniciar a analise.",
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url.includes("graph.facebook.com")) {
+          whatsappCalls.push(url);
+          return new Response(
+            JSON.stringify({
+              messages: [{ id: "wamid.direct.convex.1" }],
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return await originalFetch(input as any, init);
+      }) as typeof fetch;
+
+      try {
+        const t = convexTest(schema, modules);
+        await t.action(seedDemoDataRef, {});
+
+        const result = await postWebhook(
+          t,
+          buildInboundPayload({
+            phoneNumberId: "waba_phone_legal_1",
+            fromWaId: "5511997777777",
+            externalMessageId: "wamid-direct-convex-1",
+            textBody: "Quero orientacao previdenciaria",
+          }),
+        );
+
+        expect(result.response.status).toBe(200);
+        expect(result.body).toEqual({ processed: 1, duplicates: 0, blocked: 0, ignored: 0 });
+        expect(openAiCalls).toHaveLength(1);
+        expect(whatsappCalls).toHaveLength(1);
+
+        const session = await t.action(loginRef, {
+          username: "ana.lima",
+          password: "Ana@123456",
+        });
+
+        const inbox = await t.query(listConversationsForInboxRef, {
+          sessionToken: session.sessionToken,
+          search: "contato de teste",
+        });
+
+        const createdConversation = inbox[0];
+        expect(createdConversation).toBeTruthy();
+
+        const thread = await t.query(getConversationThreadRef, {
+          sessionToken: session.sessionToken,
+          conversationId: createdConversation!.conversationId,
+        });
+
+        expect(thread.messages.map((message: { body: string }) => message.body)).toEqual(
+          expect.arrayContaining([
+            "Quero orientacao previdenciaria",
+            "Sou o assistente especialista. Pode me enviar CPF e data de nascimento para iniciar a analise.",
+          ]),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });
