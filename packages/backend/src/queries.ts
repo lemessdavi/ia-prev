@@ -256,8 +256,11 @@ export function exportConversationDossier(input: {
   });
 
   return {
+    formatVersion: "dossie.v1",
     tenantId: session.tenantId,
     conversationId,
+    conversationStatus: conversation.conversationStatus,
+    triageResult: conversation.triageResult,
     contactId,
     generatedAtIso: new Date(now).toISOString(),
     dossier,

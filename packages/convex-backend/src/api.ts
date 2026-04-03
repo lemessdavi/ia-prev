@@ -190,8 +190,11 @@ export type Attachment = {
 };
 
 export type ConversationDossierExport = {
+  formatVersion: "dossie.v1";
   tenantId: string;
   conversationId: string;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
   contactId: string;
   generatedAtIso: string;
   dossier: Dossier;

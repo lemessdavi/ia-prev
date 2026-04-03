@@ -816,6 +816,7 @@ test("dossier export returns operational bundle and blocks cross-tenant access",
   assert.equal(exported.conversationId, "conv_ana_caio");
   assert.equal(exported.tenantId, "tenant_legal");
   assert.equal(exported.dossier.contactId, "usr_caio");
+  assert.equal(exported.formatVersion, "dossie.v1");
   assert.ok(exported.messages.length >= 1);
   assert.ok(exported.attachments.length >= 1);
   assert.ok(exported.generatedAtIso.includes("T"));

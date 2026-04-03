@@ -239,8 +239,11 @@ export interface ConversationThreadPayload {
 }
 
 export interface ConversationDossierExport {
+  formatVersion: "dossie.v1";
   tenantId: TenantId;
   conversationId: Id;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
   contactId: Id;
   generatedAtIso: string;
   dossier: Dossier;
