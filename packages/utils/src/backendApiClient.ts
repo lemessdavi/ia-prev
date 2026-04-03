@@ -235,7 +235,7 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
     async takeHandoff(conversationId) {
       await execute(async () => {
         const client = getConvexClient(convexUrl);
-        await client.mutation(convexApi.chat.takeConversationHandoff, {
+        await client.action(convexApi.chat.takeConversationHandoff, {
           sessionToken: requireSessionToken(),
           conversationId,
         });

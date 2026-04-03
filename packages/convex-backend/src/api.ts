@@ -290,10 +290,10 @@ export const api = {
       ConversationThreadPayload
     >("chatDomain:getConversationThread"),
     takeConversationHandoff: makeFunctionReference<
-      "mutation",
+      "action",
       { sessionToken: string; conversationId: string },
       { conversationId: string; conversationStatus: ConversationStatus; handoffEventId: string }
-    >("chatDomain:takeConversationHandoff"),
+    >("chatHandoffNode:takeConversationHandoff"),
     closeConversationWithReason: makeFunctionReference<
       "mutation",
       { sessionToken: string; conversationId: string; reason: string },
