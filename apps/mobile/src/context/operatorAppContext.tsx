@@ -57,6 +57,20 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = workspace !== null;
 
+  const reconcileSelectedConversation = useCallback((rows: ConversationInboxItemDTO[]) => {
+    setSelectedConversationId((currentId) => {
+      if (!currentId) {
+        return rows[0]?.conversationId ?? null;
+      }
+
+      if (rows.some((item) => item.conversationId === currentId)) {
+        return currentId;
+      }
+
+      return rows[0]?.conversationId ?? null;
+    });
+  }, []);
+
   const resetState = useCallback(() => {
     backendClient.setSessionToken(null);
     setWorkspace(null);
@@ -92,17 +106,13 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
         search: search.trim() || undefined,
       });
       setConversations(rows);
-      if (!selectedConversationId && rows[0]) {
-        setSelectedConversationId(rows[0].conversationId);
-      } else if (selectedConversationId && !rows.some((item) => item.conversationId === selectedConversationId)) {
-        setSelectedConversationId(rows[0]?.conversationId ?? null);
-      }
+      reconcileSelectedConversation(rows);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
     } finally {
       setLoadingConversations(false);
     }
-  }, [search, selectedConversationId, statusFilter, toReadableError]);
+  }, [reconcileSelectedConversation, search, statusFilter, toReadableError]);
 
   const loadThread = useCallback(
     async (conversationId: string, markRead: boolean) => {
@@ -139,12 +149,37 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const timer = setTimeout(() => {
-      void loadConversations();
-    }, 250);
 
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, loadConversations]);
+    setLoadingConversations(true);
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void (async () => {
+      try {
+        unsubscribe = await backendClient.subscribeToConversations(
+          {
+            status: statusFilter,
+            search: search.trim() || undefined,
+          },
+          (rows) => {
+            if (cancelled) return;
+            setConversations(rows);
+            reconcileSelectedConversation(rows);
+            setLoadingConversations(false);
+          },
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setLoadingConversations(false);
+        setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [isAuthenticated, reconcileSelectedConversation, search, statusFilter, toReadableError]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
@@ -153,21 +188,32 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    void loadThread(selectedConversationId, true);
-    void loadDossier(selectedConversationId);
-  }, [isAuthenticated, loadDossier, loadThread, selectedConversationId]);
+    setLoadingThread(true);
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const timer = setInterval(() => {
-      void loadConversations();
-      if (selectedConversationId) {
-        void loadThread(selectedConversationId, false);
+    void (async () => {
+      try {
+        await backendClient.markConversationAsRead(selectedConversationId);
+        unsubscribe = await backendClient.subscribeToConversationThread(selectedConversationId, (payload) => {
+          if (cancelled) return;
+          setThread(payload);
+          setLoadingThread(false);
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setLoadingThread(false);
+        setErrorMessage(toReadableError(error, "Falha ao carregar mensagens."));
       }
-    }, 6000);
+    })();
 
-    return () => clearInterval(timer);
-  }, [isAuthenticated, loadConversations, loadThread, selectedConversationId]);
+    void loadDossier(selectedConversationId);
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -195,14 +241,9 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     }
   }, [resetState]);
 
-  const selectConversation = useCallback(
-    async (conversationId: string) => {
-      setSelectedConversationId(conversationId);
-      await loadThread(conversationId, true);
-      await loadDossier(conversationId);
-    },
-    [loadDossier, loadThread],
-  );
+  const selectConversation = useCallback(async (conversationId: string) => {
+    setSelectedConversationId(conversationId);
+  }, []);
 
   const sendMessage = useCallback(
     async (body: string) => {
@@ -211,15 +252,13 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       setErrorMessage(null);
       try {
         await backendClient.sendMessage(selectedConversationId, body);
-        await loadThread(selectedConversationId, false);
-        await loadConversations();
       } catch (error) {
         setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
       } finally {
         setLoadingAction(false);
       }
     },
-    [loadConversations, loadThread, selectedConversationId, toReadableError],
+    [selectedConversationId, toReadableError],
   );
 
   const takeHandoff = useCallback(async () => {
@@ -228,14 +267,12 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     setErrorMessage(null);
     try {
       await backendClient.takeHandoff(selectedConversationId);
-      await loadConversations();
-      await loadThread(selectedConversationId, false);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
     } finally {
       setLoadingAction(false);
     }
-  }, [loadConversations, loadThread, selectedConversationId, toReadableError]);
+  }, [selectedConversationId, toReadableError]);
 
   const closeConversation = useCallback(
     async (reason: string) => {
@@ -244,8 +281,6 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       setErrorMessage(null);
       try {
         await backendClient.closeConversation(selectedConversationId, reason);
-        await loadConversations();
-        await loadThread(selectedConversationId, false);
         await loadDossier(selectedConversationId);
       } catch (error) {
         setErrorMessage(toReadableError(error, "Falha ao encerrar conversa."));
@@ -253,7 +288,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
         setLoadingAction(false);
       }
     },
-    [loadConversations, loadDossier, loadThread, selectedConversationId, toReadableError],
+    [loadDossier, selectedConversationId, toReadableError],
   );
 
   const exportDossier = useCallback(async () => {
