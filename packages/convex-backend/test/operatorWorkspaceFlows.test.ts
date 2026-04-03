@@ -135,27 +135,60 @@ describe("Convex tenant operator workspace flows", () => {
     );
   });
 
-  it("closes conversation with reason and persists closure in dossier export", async () => {
+  it("closes conversation with catalog reason and persists structured closure in dossier export", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
 
     const closeResult = await t.mutation(closeConversationWithReasonRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_caio",
-      reason: "Documentacao validada e caso concluido",
+      reasonCode: "OUTRO",
+      reasonDetail: "Aguardando judicializacao",
     });
 
     expect(closeResult.conversationStatus).toBe("FECHADO");
-    expect(closeResult.closureReason).toBe("Documentacao validada e caso concluido");
+    expect(closeResult.closureReasonCode).toBe("OUTRO");
+    expect(closeResult.closureReasonDetail).toBe("Aguardando judicializacao");
+    expect(closeResult.closureReason).toBe("Outro: Aguardando judicializacao");
 
     const exportResult = await t.mutation(exportConversationDossierRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_caio",
     });
-    expect(exportResult.closureReason).toBe("Documentacao validada e caso concluido");
+    expect(exportResult.closureReasonCode).toBe("OUTRO");
+    expect(exportResult.closureReasonDetail).toBe("Aguardando judicializacao");
+    expect(exportResult.closureReason).toBe("Outro: Aguardando judicializacao");
     expect(exportResult.attachments.length).toBeGreaterThanOrEqual(1);
     expect(exportResult.messages.length).toBeGreaterThanOrEqual(1);
     expect(exportResult.handoffEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects unknown closure reason code", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await expectBusinessError(
+      t.mutation(closeConversationWithReasonRef, {
+        sessionToken: session.sessionToken,
+        conversationId: "conv_ana_caio",
+        reasonCode: "TEXTO_LIVRE",
+      }),
+      "BAD_REQUEST",
+    );
+  });
+
+  it("requires reason detail for catalog entries that need complement", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await expectBusinessError(
+      t.mutation(closeConversationWithReasonRef, {
+        sessionToken: session.sessionToken,
+        conversationId: "conv_ana_caio",
+        reasonCode: "OUTRO",
+      }),
+      "BAD_REQUEST",
+    );
   });
 
   it("blocks dossier export for users from another tenant", async () => {

@@ -775,7 +775,7 @@ test("handoff mutation marks conversation in human attendance and stores event",
   assert.equal(conversation?.conversationStatus, "EM_ATENDIMENTO_HUMANO");
 });
 
-test("closing case requires reason and writes conversation/audit updates", () => {
+test("closing case requires catalog reason and writes structured conversation/audit updates", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   const session = loginAsAna(store);
 
@@ -783,22 +783,69 @@ test("closing case requires reason and writes conversation/audit updates", () =>
     session,
     store,
     conversationId: "conv_ana_caio",
-    reason: "Documentacao validada e caso concluido",
+    reasonCode: "OUTRO",
+    reasonDetail: "Aguardando judicializacao",
     now: 1_910_000,
   });
 
   assert.equal(result.conversationId, "conv_ana_caio");
   assert.equal(result.conversationStatus, "FECHADO");
-  assert.equal(result.closureReason, "Documentacao validada e caso concluido");
+  assert.equal(result.closureReasonCode, "OUTRO");
+  assert.equal(result.closureReasonDetail, "Aguardando judicializacao");
+  assert.equal(result.closureReason, "Outro: Aguardando judicializacao");
 
   const snapshot = store.snapshot();
   const conversation = snapshot.conversations.find((item) => item.id === "conv_ana_caio");
   assert.equal(conversation?.conversationStatus, "FECHADO");
-  assert.equal(conversation?.closureReason, "Documentacao validada e caso concluido");
+  assert.equal(conversation?.closureReasonCode, "OUTRO");
+  assert.equal(conversation?.closureReasonDetail, "Aguardando judicializacao");
+  assert.equal(conversation?.closureReason, "Outro: Aguardando judicializacao");
   assert.ok(
     snapshot.auditLogs.some(
       (item) => item.action === "conversation.closed" && item.targetId === "conv_ana_caio" && item.tenantId === "tenant_legal",
     ),
+  );
+});
+
+test("closing case rejects unknown closure reason code", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  assert.throws(
+    () =>
+      closeConversationWithReason({
+        session,
+        store,
+        conversationId: "conv_ana_caio",
+        reasonCode: "TEXTO_LIVRE",
+        now: 1_910_000,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "BAD_REQUEST");
+      return true;
+    },
+  );
+});
+
+test("closing case requires detail for reason codes marked as complement-required", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  assert.throws(
+    () =>
+      closeConversationWithReason({
+        session,
+        store,
+        conversationId: "conv_ana_caio",
+        reasonCode: "OUTRO",
+        now: 1_910_000,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "BAD_REQUEST");
+      return true;
+    },
   );
 });
 
