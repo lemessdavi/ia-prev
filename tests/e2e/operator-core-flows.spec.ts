@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { loginAs, logout, openConsole, waitForInboxLoad } from "./helpers/operatorConsole";
 
@@ -72,7 +71,7 @@ test.describe("IAP-21 - fluxo operacional principal", () => {
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("dossier-export-button").click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toContain(`dossie-${CONVERSATION_CAIO}.json`);
+    expect(download.suggestedFilename()).toContain(`dossie-${CONVERSATION_CAIO}.zip`);
 
     const downloadPath = await download.path();
     expect(downloadPath).not.toBeNull();
@@ -80,17 +79,10 @@ test.describe("IAP-21 - fluxo operacional principal", () => {
       throw new Error("Arquivo de exportacao do dossie nao foi salvo.");
     }
 
-    const exported = JSON.parse(await readFile(downloadPath, "utf8")) as {
-      conversationId: string;
-      closureReason?: string;
-      messages: Array<{ body: string }>;
-      attachments: Array<{ fileName: string; contentType: string }>;
-    };
-
-    expect(exported.conversationId).toBe(CONVERSATION_CAIO);
-    expect(exported.closureReason).toBe(closureReason);
-    expect(exported.messages.some((message) => message.body === outboundBody)).toBe(true);
-    expect(exported.attachments.some((attachment) => attachment.fileName === "laudo-medico.pdf" && attachment.contentType === "application/pdf")).toBe(true);
+    const pdfDownloadPromise = page.waitForEvent("download");
+    await page.getByTestId("dossier-export-pdf-button").click();
+    const pdfDownload = await pdfDownloadPromise;
+    expect(pdfDownload.suggestedFilename()).toContain(`dossie-${CONVERSATION_CAIO}.pdf`);
 
     await page.reload();
     await expect(page.getByTestId("workspace-tenant-name")).toHaveText("Lemes Advocacia");

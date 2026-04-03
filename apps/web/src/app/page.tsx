@@ -6,6 +6,7 @@ import { tokens } from "config";
 import { useQuery } from "convex/react";
 import {
   BackendApiClientError,
+  createDossierExportFiles,
   createBackendApiClient,
   formatConversationStatusLabel,
   resolveThreadMessageOrigin,
@@ -436,16 +437,33 @@ export default function Home() {
     }
   }
 
-  async function handleExportDossier() {
+  async function handleExportDossierZip() {
     if (!selectedConversationId) return;
     setPerformingAction(true);
     setErrorMessage(null);
     try {
       const payload = await api.exportDossier(selectedConversationId);
       setDossier(payload);
-      downloadJson(`dossie-${selectedConversationId}.json`, payload);
+      const files = createDossierExportFiles(payload);
+      downloadBytes(files.zipFileName, files.zipBytes, "application/zip");
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie."));
+      setErrorMessage(toReadableError(error, "Falha ao exportar dossie em ZIP."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  async function handleExportDossierPdf() {
+    if (!selectedConversationId) return;
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      const payload = await api.exportDossier(selectedConversationId);
+      setDossier(payload);
+      const files = createDossierExportFiles(payload);
+      downloadBytes(files.pdfFileName, files.pdfBytes, "application/pdf");
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao exportar dossie em PDF."));
     } finally {
       setPerformingAction(false);
     }
@@ -849,11 +867,19 @@ export default function Home() {
                   <h3 className="text-xs uppercase tracking-wider text-zinc-500">Acoes</h3>
                   <button
                     className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                    onClick={handleExportDossier}
+                    onClick={handleExportDossierZip}
                     data-testid="dossier-export-button"
                     disabled={!selectedConversationId || performingAction}
                   >
-                    Exportar dossie
+                    Exportar dossie (ZIP)
+                  </button>
+                  <button
+                    className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
+                    onClick={handleExportDossierPdf}
+                    data-testid="dossier-export-pdf-button"
+                    disabled={!selectedConversationId || performingAction}
+                  >
+                    Exportar resumo (PDF)
                   </button>
                   <label htmlFor="closureReason" className="mt-3 block text-xs font-medium text-zinc-700">
                     Motivo de encerramento
@@ -923,9 +949,8 @@ function formatDateTime(timestamp: number): string {
   });
 }
 
-function downloadJson(fileName: string, payload: unknown): void {
-  const serialized = JSON.stringify(payload, null, 2);
-  const blob = new Blob([serialized], { type: "application/json" });
+function downloadBytes(fileName: string, payload: Uint8Array, mimeType: string): void {
+  const blob = new Blob([payload], { type: mimeType });
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
