@@ -395,6 +395,7 @@ describe("Convex tenant operator workspace flows", () => {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_caio",
     });
+    expect(exportResult.formatVersion).toBe("dossie.v1");
     expect(exportResult.closureReason).toBe("Documentacao validada e caso concluido");
     expect(exportResult.attachments.length).toBeGreaterThanOrEqual(1);
     expect(exportResult.messages.length).toBeGreaterThanOrEqual(1);

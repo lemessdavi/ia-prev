@@ -13,3 +13,4 @@ export {
 export * from "./backendApiTypes";
 export * from "./backendApiClient";
 export * from "./messagePresentation";
+export * from "./dossierExportArtifacts";

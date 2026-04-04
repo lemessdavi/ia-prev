@@ -211,8 +211,11 @@ export const dossierEventValidator = v.object({
 });
 
 export const conversationDossierExportValidator = v.object({
+  formatVersion: v.literal("dossie.v1"),
   tenantId: v.string(),
   conversationId: v.string(),
+  conversationStatus: conversationStatusValidator,
+  triageResult: triageResultValidator,
   contactId: v.string(),
   generatedAtIso: v.string(),
   dossier: dossierValidator,

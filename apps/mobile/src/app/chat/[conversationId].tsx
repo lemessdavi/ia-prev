@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import * as FileSystemLegacy from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
-import { resolveThreadMessageOrigin, shouldRenderMessageOnRight } from "utils";
+import { bytesToBase64, createDossierExportFiles, resolveThreadMessageOrigin, shouldRenderMessageOnRight } from "utils";
 import { useOperatorApp } from "@/context/operatorAppContext";
 
 export default function ChatScreen() {
@@ -17,12 +19,14 @@ export default function ChatScreen() {
     sendMessage,
     takeHandoff,
     setConversationTriageResult,
+    exportDossier,
     loadingThread,
     loadingAction,
     errorMessage,
     selectConversation,
   } = useOperatorApp();
   const [draft, setDraft] = useState("");
+  const [shareError, setShareError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -35,6 +39,34 @@ export default function ChatScreen() {
     if (!normalized) return;
     await sendMessage(normalized);
     setDraft("");
+  }
+
+  async function handleShareZip() {
+    if (!canActOnConversation) return;
+    const payload = await exportDossier();
+    if (!payload) return;
+
+    setShareError(null);
+    try {
+      const files = createDossierExportFiles(payload);
+      await shareBinaryFile(files.zipFileName, files.zipBytes, "application/zip");
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Falha ao compartilhar ZIP.");
+    }
+  }
+
+  async function handleSharePdf() {
+    if (!canActOnConversation) return;
+    const payload = await exportDossier();
+    if (!payload) return;
+
+    setShareError(null);
+    try {
+      const files = createDossierExportFiles(payload);
+      await shareBinaryFile(files.pdfFileName, files.pdfBytes, "application/pdf");
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Falha ao compartilhar PDF.");
+    }
   }
 
   if (!isAuthenticated) {
@@ -94,6 +126,36 @@ export default function ChatScreen() {
                   <Text>{option.label}</Text>
                 </Pressable>
               ))}
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+              <Pressable
+                onPress={() => void handleShareZip()}
+                disabled={!canActOnConversation}
+                style={{
+                  borderWidth: 1,
+                  borderColor: tokens.colors.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  opacity: canActOnConversation ? 1 : 0.6,
+                }}
+              >
+                <Text>Compartilhar ZIP</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleSharePdf()}
+                disabled={!canActOnConversation}
+                style={{
+                  borderWidth: 1,
+                  borderColor: tokens.colors.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  opacity: canActOnConversation ? 1 : 0.6,
+                }}
+              >
+                <Text>Compartilhar PDF</Text>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -169,6 +231,7 @@ export default function ChatScreen() {
           <Text style={{ textAlign: "center", color: "#fff", fontWeight: "600" }}>Enviar</Text>
         </Pressable>
         {errorMessage ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{errorMessage}</Text> : null}
+        {shareError ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{shareError}</Text> : null}
       </View>
     </SafeAreaView>
   );
@@ -194,4 +257,26 @@ function toTriageLabel(result: string): string {
     default:
       return result;
   }
+}
+
+async function shareBinaryFile(fileName: string, bytes: Uint8Array, mimeType: string) {
+  const sharingAvailable = await Sharing.isAvailableAsync();
+  if (!sharingAvailable) {
+    throw new Error("Compartilhamento nao disponivel neste dispositivo.");
+  }
+
+  const directory = FileSystemLegacy.cacheDirectory ?? FileSystemLegacy.documentDirectory;
+  if (!directory) {
+    throw new Error("Diretorio temporario indisponivel para exportacao.");
+  }
+
+  const fileUri = `${directory}${fileName}`;
+  await FileSystemLegacy.writeAsStringAsync(fileUri, bytesToBase64(bytes), {
+    encoding: FileSystemLegacy.EncodingType.Base64,
+  });
+
+  await Sharing.shareAsync(fileUri, {
+    mimeType,
+    dialogTitle: `Exportar ${fileName}`,
+  });
 }

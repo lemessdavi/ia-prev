@@ -9,7 +9,7 @@ Cobertura:
 - Thread + envio de mensagem
 - Handoff
 - Fechamento com motivo
-- Export de dossie
+- Export de dossie (ZIP + PDF)
 - Isolamento tenant-aware
 - Webhook WABA (fail-closed + idempotencia)
 - Fluxo no layout mobile (web responsivo)

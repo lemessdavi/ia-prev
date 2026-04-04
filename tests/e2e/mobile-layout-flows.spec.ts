@@ -31,5 +31,6 @@ test.describe("IAP-21 - fluxo mobile layout (web)", () => {
     await page.getByTestId("mobile-tab-dossier").click();
     await expect(page.getByTestId("dossier-contact-id")).toHaveText("usr_caio");
     await expect(page.getByTestId("dossier-export-button")).toBeEnabled();
+    await expect(page.getByTestId("dossier-export-pdf-button")).toBeEnabled();
   });
 });

@@ -1028,8 +1028,11 @@ export const exportConversationDossier = mutation({
     ]);
 
     return {
+      formatVersion: "dossie.v1" as const,
       tenantId: session.tenantId,
       conversationId,
+      conversationStatus: conversation.conversationStatus,
+      triageResult: conversation.triageResult,
       contactId,
       generatedAtIso: new Date(now).toISOString(),
       dossier: toDossier(dossierRow),
