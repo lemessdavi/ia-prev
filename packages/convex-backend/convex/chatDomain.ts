@@ -28,6 +28,7 @@ import {
   dossierValidator,
   messageValidator,
   tenantWorkspaceSummaryValidator,
+  triageResultValidator,
 } from "./coreValidators";
 
 type SessionShape = {
@@ -906,11 +907,11 @@ export const setConversationTriageResult = mutation({
   args: {
     sessionToken: v.string(),
     conversationId: v.string(),
-    triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO")),
+    triageResult: triageResultValidator,
   },
   returns: v.object({
     conversationId: v.string(),
-    triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO")),
+    triageResult: triageResultValidator,
   }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);

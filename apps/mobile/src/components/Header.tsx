@@ -1,5 +1,5 @@
 import { View, Text, Pressable, Linking } from 'react-native';
-import { Link, type Href } from 'expo-router';
+import { Link } from 'expo-router';
 
 interface HeaderProps {
   title?: string;
@@ -15,7 +15,7 @@ export function Header({ title = "Universal React Monorepo", subtitle, showNav =
 
         {showNav && (
           <View className="flex-row items-center gap-4">
-            <Link href={"/(tabs)" as Href} asChild>
+            <Link href="/" asChild>
               <Pressable>
                 <Text className="text-sm text-gray-600">Components</Text>
               </Pressable>

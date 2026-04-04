@@ -10,7 +10,6 @@ import {
 import { backendClient } from "@/lib/backendClient";
 
 export type InboxFilter = "ALL" | "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "FINALIZADO";
-type ManualTriageResult = Exclude<TriageResult, "N_A">;
 
 type OperatorAppContextValue = {
   workspace: TenantWorkspaceSummaryDTO | null;
@@ -36,7 +35,7 @@ type OperatorAppContextValue = {
   sendMessage: (body: string) => Promise<void>;
   takeHandoff: () => Promise<void>;
   closeConversation: (reason: string) => Promise<void>;
-  setConversationTriageResult: (triageResult: ManualTriageResult) => Promise<void>;
+  setConversationTriageResult: (triageResult: TriageResult) => Promise<void>;
   exportDossier: () => Promise<DossierExportDTO | null>;
   refresh: () => Promise<void>;
 };
@@ -311,7 +310,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   );
 
   const setConversationTriageResult = useCallback(
-    async (triageResult: ManualTriageResult) => {
+    async (triageResult: TriageResult) => {
       if (!selectedConversationId) return;
       setLoadingAction(true);
       setErrorMessage(null);

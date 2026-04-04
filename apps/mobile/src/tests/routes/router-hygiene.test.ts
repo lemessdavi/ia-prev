@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -34,5 +34,10 @@ describe("Expo Router route hygiene", () => {
 
     const routeTestFiles = collectRouteTestFiles(appDirectory).sort();
     expect(routeTestFiles).toEqual([]);
+  });
+
+  it("does not keep expo tabs route group in mobile app", () => {
+    const tabsDirectory = path.resolve(process.cwd(), "src/app/(tabs)");
+    expect(existsSync(tabsDirectory)).toBe(false);
   });
 });

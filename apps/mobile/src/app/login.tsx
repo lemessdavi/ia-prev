@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
-import { Redirect, type Href } from "expo-router";
+import { Redirect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
 import { Button } from "ui";
@@ -12,7 +12,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("Ana@123456");
 
   if (isAuthenticated) {
-    return <Redirect href={"/(tabs)" as Href} />;
+    return <Redirect href="/" />;
   }
 
   return (

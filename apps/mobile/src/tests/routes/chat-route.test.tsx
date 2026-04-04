@@ -1,20 +1,21 @@
 /* eslint-disable react/display-name */
 import React, { type ReactNode } from "react";
-import { render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Index from "@/app/index";
+import ChatScreen from "@/app/chat/[conversationId]";
 
-const redirectSpy = vi.fn();
+const backMock = vi.fn();
+const selectConversationMock = vi.fn();
+const setConversationTriageResultMock = vi.fn();
 const useOperatorAppMock = vi.fn();
-const pushMock = vi.fn();
 
 vi.mock("expo-router", () => ({
-  Redirect: ({ href }: { href: string }) => {
-    redirectSpy(href);
-    return null;
-  },
+  Redirect: () => null,
   useRouter: () => ({
-    push: pushMock,
+    back: backMock,
+  }),
+  useLocalSearchParams: () => ({
+    conversationId: "c-1",
   }),
 }));
 
@@ -30,6 +31,11 @@ vi.mock("config", () => ({
   },
 }));
 
+vi.mock("utils", () => ({
+  resolveThreadMessageOrigin: () => "operator",
+  shouldRenderMessageOnRight: () => true,
+}));
+
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -41,7 +47,9 @@ vi.mock("react-native", () => {
       children,
       onPress,
       onChangeText,
+      onSubmitEditing,
       value,
+      editable,
       accessibilityRole,
       accessibilityLabel,
       ...props
@@ -59,15 +67,22 @@ vi.mock("react-native", () => {
           </button>
         );
       }
+
       if (tag === "input") {
         return (
           <input
             value={typeof value === "string" ? value : ""}
             onChange={(event) => (onChangeText as ((next: string) => void) | undefined)?.(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                (onSubmitEditing as (() => void) | undefined)?.();
+              }
+            }}
             {...domProps}
           />
         );
       }
+
       return React.createElement(tag, domProps, children as ReactNode);
     };
 
@@ -76,9 +91,10 @@ vi.mock("react-native", () => {
     Text: element("span"),
     Pressable: element("button"),
     TextInput: element("input"),
-    FlatList: ({ data, renderItem }: { data: unknown[]; renderItem: (input: { item: unknown }) => ReactNode }) => (
-      <div>{data.map((item, index) => React.createElement(React.Fragment, { key: index }, renderItem({ item })))}</div>
-    ),
+    ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    Linking: {
+      openURL: vi.fn(),
+    },
   };
 });
 
@@ -86,43 +102,49 @@ vi.mock("@/context/operatorAppContext", () => ({
   useOperatorApp: () => useOperatorAppMock(),
 }));
 
-describe("Index route", () => {
+describe("Chat route", () => {
   beforeEach(() => {
-    redirectSpy.mockClear();
-    pushMock.mockReset();
+    backMock.mockReset();
+    selectConversationMock.mockReset();
+    setConversationTriageResultMock.mockReset();
     useOperatorAppMock.mockReset();
+    selectConversationMock.mockResolvedValue(undefined);
+    setConversationTriageResultMock.mockResolvedValue(undefined);
   });
 
-  it("redirects unauthenticated users to login", () => {
-    useOperatorAppMock.mockReturnValue({ isAuthenticated: false });
-
-    render(<Index />);
-
-    expect(redirectSpy).toHaveBeenCalledWith("/login");
-  });
-
-  it("renders the chats list for authenticated users without tabs redirect", () => {
+  it("uses triage dropdown instead of legacy triage action buttons", async () => {
     useOperatorAppMock.mockReturnValue({
       isAuthenticated: true,
-      workspace: {
-        tenantName: "IA Prev Demo",
-        wabaLabel: "WA Demo",
-        activeAiProfileName: "IA Assistente",
+      thread: {
+        conversationId: "c-1",
+        title: "Conversa c-1",
+        triageResult: "N_A",
+        messages: [],
       },
-      conversations: [],
-      selectedConversationId: null,
-      statusFilter: "ALL",
-      setStatusFilter: vi.fn(),
-      search: "",
-      setSearch: vi.fn(),
-      loadingConversations: false,
+      selectedConversationId: "c-1",
+      workspace: {
+        operator: {
+          userId: "u-1",
+          fullName: "Ana Lima",
+        },
+      },
+      sendMessage: vi.fn(),
+      takeHandoff: vi.fn(),
+      setConversationTriageResult: setConversationTriageResultMock,
+      loadingThread: false,
+      loadingAction: false,
       errorMessage: null,
-      selectConversation: vi.fn(),
-      logout: vi.fn(),
+      selectConversation: selectConversationMock,
     });
 
-    render(<Index />);
+    const screen = render(<ChatScreen />);
 
-    expect(redirectSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText("Marcar apto")).toBeNull();
+    fireEvent.click(screen.getByText("Triagem manual"));
+    fireEvent.click(screen.getByText("Nenhum (N/A)"));
+
+    await waitFor(() => {
+      expect(setConversationTriageResultMock).toHaveBeenCalledWith("N_A");
+    });
   });
 });

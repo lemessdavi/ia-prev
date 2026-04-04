@@ -46,7 +46,7 @@ export interface BackendApiClient {
   sendMessage(conversationId: string, body: string, attachmentUrl?: string): Promise<void>;
   takeHandoff(conversationId: string): Promise<void>;
   closeConversation(conversationId: string, reason: string): Promise<void>;
-  setConversationTriageResult(conversationId: string, triageResult: Exclude<TriageResult, "N_A">): Promise<void>;
+  setConversationTriageResult(conversationId: string, triageResult: TriageResult): Promise<void>;
   exportDossier(conversationId: string): Promise<DossierExportDTO>;
 }
 

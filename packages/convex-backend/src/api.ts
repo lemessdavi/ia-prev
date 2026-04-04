@@ -325,8 +325,8 @@ export const api = {
     >("chatDomain:closeConversationWithReason"),
     setConversationTriageResult: makeFunctionReference<
       "mutation",
-      { sessionToken: string; conversationId: string; triageResult: Exclude<TriageResult, "N_A"> },
-      { conversationId: string; triageResult: Exclude<TriageResult, "N_A"> }
+      { sessionToken: string; conversationId: string; triageResult: TriageResult },
+      { conversationId: string; triageResult: TriageResult }
     >("chatDomain:setConversationTriageResult"),
     upsertTriageAnswers: makeFunctionReference<
       "mutation",

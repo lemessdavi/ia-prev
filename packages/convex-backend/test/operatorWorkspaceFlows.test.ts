@@ -378,6 +378,34 @@ describe("Convex tenant operator workspace flows", () => {
     expect(thread.triageResult).toBe("REVISAO_HUMANA");
   });
 
+  it("allows operator to clear conversation triage result back to N_A", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await t.mutation(setConversationTriageResultRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "REVISAO_HUMANA",
+    });
+
+    const result = await t.mutation(setConversationTriageResultRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "N_A",
+    });
+
+    expect(result).toMatchObject({
+      conversationId: "conv_ana_marina",
+      triageResult: "N_A",
+    });
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+    });
+    expect(thread.triageResult).toBe("N_A");
+  });
+
   it("closes conversation with reason and persists closure in dossier export", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
