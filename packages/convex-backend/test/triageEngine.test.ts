@@ -40,8 +40,31 @@ async function expectBusinessError(promise: Promise<unknown>, code: string) {
   }
 }
 
-describe("triageEngine eligibility evaluation", () => {
-  it("marks AUXILIO_ACIDENTE as APTO when required answers are complete and consistent", async () => {
+describe("triageEngine integration contract", () => {
+  it("stores triage answers and keeps status N_A until IA decision", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    const triage = await t.mutation(upsertTriageAnswersRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      flowType: "AUXILIO_ACIDENTE",
+      answers: {
+        teveAcidente: true,
+        anoAcidente: 2020,
+      },
+    });
+
+    expect(triage.triageResult).toBe("N_A");
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+    });
+    expect(thread.triageResult).toBe("N_A");
+  });
+
+  it("applies IA decision and syncs conversation triageResult", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
 
@@ -51,200 +74,123 @@ describe("triageEngine eligibility evaluation", () => {
       flowType: "AUXILIO_ACIDENTE",
       answers: {
         teveAcidente: true,
-        possuiSequelaConsolidada: true,
-        reducaoCapacidadeLaboral: true,
-        possuiQualidadeSegurado: true,
-        anoAcidente: 2020,
       },
     });
 
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
+    const decision = await t.mutation(evaluateConversationTriageRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_marina",
+      triageResult: "APTO",
+      reasons: ["Modelo v2: criterios atendidos."],
     });
 
-    expect(evaluation.triageResult).toBe("APTO");
+    expect(decision.triageResult).toBe("APTO");
+    expect(decision.reasons).toEqual(["Modelo v2: criterios atendidos."]);
 
     const thread = await t.query(getConversationThreadRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_marina",
     });
     expect(thread.triageResult).toBe("APTO");
-  }, 15_000);
-
-  it("marks AUXILIO_ACIDENTE as NAO_APTO when minimum criteria are explicitly not met (RN-03)", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "AUXILIO_ACIDENTE",
-      answers: {
-        teveAcidente: true,
-        possuiSequelaConsolidada: false,
-        reducaoCapacidadeLaboral: true,
-        possuiQualidadeSegurado: true,
-        anoAcidente: 2018,
-      },
-    });
-
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(evaluation.triageResult).toBe("NAO_APTO");
-    expect(evaluation.reasons).toContain("AUXILIO_ACIDENTE: possuiSequelaConsolidada deve ser true.");
-  });
-
-  it("marks AUXILIO_ACIDENTE as REVISAO_HUMANA when critical gaps exist (RN-04)", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "AUXILIO_ACIDENTE",
-      answers: {
-        teveAcidente: true,
-        possuiSequelaConsolidada: true,
-        reducaoCapacidadeLaboral: true,
-        possuiQualidadeSegurado: true,
-      },
-    });
-
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(evaluation.triageResult).toBe("REVISAO_HUMANA");
-    expect(evaluation.missingFields).toContain("anoAcidente");
-  });
-
-  it("marks APOSENTADORIA_ANTECIPADA as APTO when required answers are complete and consistent", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "APOSENTADORIA_ANTECIPADA",
-      answers: {
-        idade: 58,
-        tempoContribuicaoAnos: 32,
-        possuiCarenciaMinima: true,
-        possuiTempoEspecialComprovado: true,
-      },
-    });
-
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(evaluation.triageResult).toBe("APTO");
-  });
-
-  it("marks APOSENTADORIA_ANTECIPADA as NAO_APTO when minimum criteria are explicitly not met (RN-03)", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "APOSENTADORIA_ANTECIPADA",
-      answers: {
-        idade: 45,
-        tempoContribuicaoAnos: 20,
-        possuiCarenciaMinima: true,
-        possuiTempoEspecialComprovado: true,
-      },
-    });
-
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(evaluation.triageResult).toBe("NAO_APTO");
-    expect(evaluation.reasons).toContain("APOSENTADORIA_ANTECIPADA: idade minima de 50 anos nao atendida.");
-  });
-
-  it("marks APOSENTADORIA_ANTECIPADA as REVISAO_HUMANA when there is critical inconsistency (RN-04)", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "APOSENTADORIA_ANTECIPADA",
-      answers: {
-        idade: 45,
-        tempoContribuicaoAnos: 40,
-        possuiCarenciaMinima: true,
-        possuiTempoEspecialComprovado: true,
-      },
-    });
-
-    const evaluation = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(evaluation.triageResult).toBe("REVISAO_HUMANA");
-    expect(evaluation.inconsistencies).toContain("tempoContribuicaoAnos nao pode exceder idade - 14.");
-  });
-
-  it("supports re-evaluation after triage answers update", async () => {
-    const t = await createSeededTestContext();
-    const session = await loginAs(t, "ana.lima", "Ana@123456");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "APOSENTADORIA_ANTECIPADA",
-      answers: {
-        idade: 45,
-        tempoContribuicaoAnos: 20,
-        possuiCarenciaMinima: true,
-        possuiTempoEspecialComprovado: true,
-      },
-    });
-
-    const first = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-    expect(first.triageResult).toBe("NAO_APTO");
-
-    await t.mutation(upsertTriageAnswersRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-      flowType: "APOSENTADORIA_ANTECIPADA",
-      answers: {
-        idade: 58,
-        tempoContribuicaoAnos: 33,
-        possuiCarenciaMinima: true,
-        possuiTempoEspecialComprovado: true,
-      },
-    });
-
-    const second = await t.mutation(evaluateConversationTriageRef, {
-      sessionToken: session.sessionToken,
-      conversationId: "conv_ana_marina",
-    });
-
-    expect(second.triageResult).toBe("APTO");
 
     const triage = await t.query(getConversationTriageRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_marina",
     });
+    expect(triage?.triageResult).toBe("APTO");
+  });
 
-    expect(triage.flowType).toBe("APOSENTADORIA_ANTECIPADA");
-    expect(triage.triageResult).toBe("APTO");
+  it("supports human-review decision payload from IA", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await t.mutation(upsertTriageAnswersRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      flowType: "APOSENTADORIA_ANTECIPADA",
+      answers: {
+        idade: 52,
+      },
+    });
+
+    const decision = await t.mutation(evaluateConversationTriageRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "REVISAO_HUMANA",
+      reasons: ["Dados conflitantes segundo classificador externo."],
+      missingFields: ["tempoContribuicaoAnos"],
+      inconsistencies: ["tempo declarado diverge de documento anexado"],
+    });
+
+    expect(decision.triageResult).toBe("REVISAO_HUMANA");
+    expect(decision.missingFields).toEqual(["tempoContribuicaoAnos"]);
+    expect(decision.inconsistencies).toEqual(["tempo declarado diverge de documento anexado"]);
+  });
+
+  it("allows IA to change previous decision", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await t.mutation(upsertTriageAnswersRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      flowType: "APOSENTADORIA_ANTECIPADA",
+      answers: {
+        idade: 51,
+      },
+    });
+
+    await t.mutation(evaluateConversationTriageRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "NAO_APTO",
+      reasons: ["Modelo v1: nao apto."],
+    });
+
+    const updated = await t.mutation(evaluateConversationTriageRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "APTO",
+      reasons: ["Modelo v2: apto apos reprocessamento."],
+    });
+
+    expect(updated.triageResult).toBe("APTO");
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+    });
+    expect(thread.triageResult).toBe("APTO");
+  });
+
+  it("allows direct IA decision without prior answer upsert when flowType is provided", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    const decision = await t.mutation(evaluateConversationTriageRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      flowType: "AUXILIO_ACIDENTE",
+      triageResult: "REVISAO_HUMANA",
+      reasons: ["Classificador sem confianca suficiente."],
+    });
+
+    expect(decision.flowType).toBe("AUXILIO_ACIDENTE");
+    expect(decision.triageResult).toBe("REVISAO_HUMANA");
+  });
+
+  it("rejects decision without flowType when no triage context exists", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    await expectBusinessError(
+      t.mutation(evaluateConversationTriageRef, {
+        sessionToken: session.sessionToken,
+        conversationId: "conv_ana_marina",
+        triageResult: "APTO",
+      }),
+      "BAD_REQUEST",
+    );
   });
 
   it("blocks triage update across tenants", async () => {
@@ -252,17 +198,11 @@ describe("triageEngine eligibility evaluation", () => {
     const clinicSession = await loginAs(t, "bruna.alves", "Bruna@123456");
 
     await expectBusinessError(
-      t.mutation(upsertTriageAnswersRef, {
+      t.mutation(evaluateConversationTriageRef, {
         sessionToken: clinicSession.sessionToken,
         conversationId: "conv_ana_marina",
+        triageResult: "APTO",
         flowType: "AUXILIO_ACIDENTE",
-        answers: {
-          teveAcidente: true,
-          possuiSequelaConsolidada: true,
-          reducaoCapacidadeLaboral: true,
-          possuiQualidadeSegurado: true,
-          anoAcidente: 2019,
-        },
       }),
       "NOT_FOUND",
     );

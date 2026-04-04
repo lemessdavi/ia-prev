@@ -2,12 +2,15 @@ import { type ReactNode, createContext, useCallback, useContext, useEffect, useM
 import {
   BackendApiClientError,
   type ConversationInboxItemDTO,
-  type ConversationStatus,
   type ConversationThreadPayloadDTO,
   type DossierExportDTO,
   type TenantWorkspaceSummaryDTO,
+  type TriageResult,
 } from "utils";
 import { backendClient } from "@/lib/backendClient";
+
+export type InboxFilter = "ALL" | "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "FINALIZADO";
+type ManualTriageResult = Exclude<TriageResult, "N_A">;
 
 type OperatorAppContextValue = {
   workspace: TenantWorkspaceSummaryDTO | null;
@@ -15,7 +18,7 @@ type OperatorAppContextValue = {
   thread: ConversationThreadPayloadDTO | null;
   dossier: DossierExportDTO | null;
   selectedConversationId: string | null;
-  statusFilter: ConversationStatus | "ALL";
+  statusFilter: InboxFilter;
   search: string;
   loadingAuth: boolean;
   loadingConversations: boolean;
@@ -24,7 +27,7 @@ type OperatorAppContextValue = {
   loadingAction: boolean;
   errorMessage: string | null;
   isAuthenticated: boolean;
-  setStatusFilter: (status: ConversationStatus | "ALL") => void;
+  setStatusFilter: (status: InboxFilter) => void;
   setSearch: (value: string) => void;
   clearError: () => void;
   login: (username: string, password: string) => Promise<void>;
@@ -33,6 +36,7 @@ type OperatorAppContextValue = {
   sendMessage: (body: string) => Promise<void>;
   takeHandoff: () => Promise<void>;
   closeConversation: (reason: string) => Promise<void>;
+  setConversationTriageResult: (triageResult: ManualTriageResult) => Promise<void>;
   exportDossier: () => Promise<DossierExportDTO | null>;
   refresh: () => Promise<void>;
 };
@@ -45,7 +49,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   const [thread, setThread] = useState<ConversationThreadPayloadDTO | null>(null);
   const [dossier, setDossier] = useState<DossierExportDTO | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<ConversationStatus | "ALL">("ALL");
+  const [statusFilter, setStatusFilter] = useState<InboxFilter>("ALL");
   const [search, setSearch] = useState("");
 
   const [loadingAuth, setLoadingAuth] = useState(false);
@@ -98,21 +102,35 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     setWorkspace(data);
   }, []);
 
+  const statusQueryParam = useMemo(() => (statusFilter === "FINALIZADO" ? "FECHADO" : "ALL"), [statusFilter]);
+
+  const applyInboxFilter = useCallback(
+    (rows: ConversationInboxItemDTO[]) => {
+      if (statusFilter === "APTO" || statusFilter === "REVISAO_HUMANA" || statusFilter === "NAO_APTO") {
+        return rows.filter((row) => row.triageResult === statusFilter);
+      }
+
+      return rows;
+    },
+    [statusFilter],
+  );
+
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
       const rows = await backendClient.listConversations({
-        status: statusFilter,
+        status: statusQueryParam,
         search: search.trim() || undefined,
       });
-      setConversations(rows);
-      reconcileSelectedConversation(rows);
+      const filteredRows = applyInboxFilter(rows);
+      setConversations(filteredRows);
+      reconcileSelectedConversation(filteredRows);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
     } finally {
       setLoadingConversations(false);
     }
-  }, [reconcileSelectedConversation, search, statusFilter, toReadableError]);
+  }, [applyInboxFilter, reconcileSelectedConversation, search, statusQueryParam, toReadableError]);
 
   const loadThread = useCallback(
     async (conversationId: string, markRead: boolean) => {
@@ -158,13 +176,14 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       try {
         unsubscribe = await backendClient.subscribeToConversations(
           {
-            status: statusFilter,
+            status: statusQueryParam,
             search: search.trim() || undefined,
           },
           (rows) => {
             if (cancelled) return;
-            setConversations(rows);
-            reconcileSelectedConversation(rows);
+            const filteredRows = applyInboxFilter(rows);
+            setConversations(filteredRows);
+            reconcileSelectedConversation(filteredRows);
             setLoadingConversations(false);
           },
         );
@@ -179,7 +198,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [isAuthenticated, reconcileSelectedConversation, search, statusFilter, toReadableError]);
+  }, [applyInboxFilter, isAuthenticated, reconcileSelectedConversation, search, statusQueryParam, toReadableError]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
@@ -291,6 +310,24 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     [loadDossier, selectedConversationId, toReadableError],
   );
 
+  const setConversationTriageResult = useCallback(
+    async (triageResult: ManualTriageResult) => {
+      if (!selectedConversationId) return;
+      setLoadingAction(true);
+      setErrorMessage(null);
+      try {
+        await backendClient.setConversationTriageResult(selectedConversationId, triageResult);
+        await loadConversations();
+        await loadThread(selectedConversationId, false);
+      } catch (error) {
+        setErrorMessage(toReadableError(error, "Falha ao atualizar resultado da triagem."));
+      } finally {
+        setLoadingAction(false);
+      }
+    },
+    [loadConversations, loadThread, selectedConversationId, toReadableError],
+  );
+
   const exportDossier = useCallback(async () => {
     if (!selectedConversationId) return null;
     setLoadingAction(true);
@@ -340,6 +377,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       sendMessage,
       takeHandoff,
       closeConversation,
+      setConversationTriageResult,
       exportDossier,
       refresh,
     }),
@@ -364,6 +402,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       sendMessage,
       takeHandoff,
       closeConversation,
+      setConversationTriageResult,
       exportDossier,
       refresh,
     ],

@@ -7,7 +7,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { useOperatorApp } from "@/context/operatorAppContext";
 
 export default function ChatScreen() {
-  const { thread, selectedConversationId, workspace, sendMessage, takeHandoff, loadingThread, loadingAction, errorMessage } =
+  const { thread, selectedConversationId, workspace, sendMessage, takeHandoff, setConversationTriageResult, loadingThread, loadingAction, errorMessage } =
     useOperatorApp();
   const [draft, setDraft] = useState("");
 
@@ -26,6 +26,7 @@ export default function ChatScreen() {
             {thread?.title ?? "Selecione uma conversa"}
           </Text>
           <Text style={{ color: tokens.colors.textMuted }}>Operador: {workspace?.operator.fullName ?? "-"}</Text>
+          <Text style={{ marginTop: 4, color: tokens.colors.textMuted }}>Triagem: {toTriageLabel(thread?.triageResult ?? "N_A")}</Text>
           <Pressable
             onPress={() => void takeHandoff()}
             disabled={!selectedConversationId || loadingAction}
@@ -41,6 +42,29 @@ export default function ChatScreen() {
           >
             <Text style={{ color: "#fff", fontWeight: "600" }}>Assumir Conversa</Text>
           </Pressable>
+          <View style={{ marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {[
+              { label: "Marcar apto", value: "APTO" as const },
+              { label: "Marcar revisao", value: "REVISAO_HUMANA" as const },
+              { label: "Marcar nao apto", value: "NAO_APTO" as const },
+            ].map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => void setConversationTriageResult(option.value)}
+                disabled={!selectedConversationId || loadingAction}
+                style={{
+                  borderWidth: 1,
+                  borderColor: tokens.colors.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  opacity: !selectedConversationId || loadingAction ? 0.6 : 1,
+                }}
+              >
+                <Text>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
           {loadingThread ? (
@@ -124,4 +148,19 @@ function toAttachmentLabel(fileName: string, contentType: string): string {
   if (contentType.includes("image")) return `Visualizar imagem: ${fileName}`;
   if (contentType.includes("pdf")) return `Visualizar PDF: ${fileName}`;
   return `Baixar arquivo: ${fileName}`;
+}
+
+function toTriageLabel(result: string): string {
+  switch (result) {
+    case "APTO":
+      return "Apto";
+    case "REVISAO_HUMANA":
+      return "Revisao humana";
+    case "NAO_APTO":
+      return "Nao apto";
+    case "N_A":
+      return "N/A";
+    default:
+      return result;
+  }
 }
