@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
-import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Redirect, useLocalSearchParams } from "expo-router";
 import * as FileSystemLegacy from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
 import { bytesToBase64, createDossierExportFiles, resolveThreadMessageOrigin, shouldRenderMessageOnRight, type TriageResult } from "utils";
 import { useOperatorApp } from "@/context/operatorAppContext";
+
+const CHAT_BOTTOM_THRESHOLD_PX = 72;
 
 const triageStatusOptions: { label: string; value: TriageResult }[] = [
   { label: "Apto", value: "APTO" },
@@ -15,7 +18,6 @@ const triageStatusOptions: { label: string; value: TriageResult }[] = [
 ];
 
 export default function ChatScreen() {
-  const router = useRouter();
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const {
     isAuthenticated,
@@ -34,12 +36,43 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState("");
   const [shareError, setShareError] = useState<string | null>(null);
   const [triageSheetOpen, setTriageSheetOpen] = useState(false);
+  const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
+  const chatScrollViewRef = useRef<ScrollView>(null);
+
+  const scrollChatToBottom = useCallback((animated: boolean) => {
+    chatScrollViewRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  const isNearBottom = useCallback((nativeEvent: NativeScrollEvent) => {
+    return nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y <= CHAT_BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  const handleChatScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      setIsChatPinnedToBottom(isNearBottom(event.nativeEvent));
+    },
+    [isNearBottom],
+  );
+
+  const handleJumpToLatestMessages = useCallback(() => {
+    setIsChatPinnedToBottom(true);
+    scrollChatToBottom(true);
+  }, [scrollChatToBottom]);
 
   useEffect(() => {
     if (!conversationId) return;
     if (selectedConversationId === conversationId) return;
     void selectConversation(conversationId);
   }, [conversationId, selectConversation, selectedConversationId]);
+
+  useEffect(() => {
+    setIsChatPinnedToBottom(true);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!isChatPinnedToBottom) return;
+    scrollChatToBottom(false);
+  }, [isChatPinnedToBottom, scrollChatToBottom, thread?.messages.length]);
 
   async function handleSend() {
     const normalized = draft.trim();
@@ -91,10 +124,7 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.colors.bg }}>
       <View style={{ borderBottomWidth: 1, borderColor: tokens.colors.border, padding: 16, backgroundColor: tokens.colors.panel }}>
-        <Pressable onPress={() => router.back()} style={{ alignSelf: "flex-start" }}>
-          <Text style={{ color: tokens.colors.primary }}>Voltar</Text>
-        </Pressable>
-        <View style={{ marginTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <View style={{ flex: 1 }}>
             <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: "600" }}>
               {thread?.title ?? "Selecione uma conversa"}
@@ -168,76 +198,115 @@ export default function ChatScreen() {
           </View>
         </View>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        {loadingThread ? (
-          <Text style={{ color: tokens.colors.textMuted }}>Carregando mensagens...</Text>
-        ) : thread?.messages.length ? (
-          thread.messages.map((message) => {
-            const operatorUserId = workspace?.operator.userId ?? "";
-            const messageOrigin = resolveThreadMessageOrigin(message.senderId, operatorUserId);
-            const isOwn = shouldRenderMessageOnRight(message.senderId, operatorUserId);
-            const isAssistant = messageOrigin === "assistant";
-            return (
-              <View key={message.id} style={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: "82%" }}>
-                {isAssistant ? (
-                  <Text style={{ marginBottom: 4, fontSize: 11, fontWeight: "600", color: tokens.colors.textMuted }}>IA</Text>
-                ) : null}
-                <View
-                  style={{
-                    backgroundColor: tokens.colors.panel,
-                    borderWidth: 1,
-                    borderColor: tokens.colors.border,
-                    borderRadius: 16,
-                    padding: 12,
-                  }}
-                >
-                  <Text style={{ fontSize: 16 }}>{message.body}</Text>
-                  {message.attachment ? (
-                    <Pressable onPress={() => void Linking.openURL(message.attachment!.url)} style={{ marginTop: 8 }}>
-                      <Text style={{ color: tokens.colors.primary, textDecorationLine: "underline" }}>
-                        {toAttachmentLabel(message.attachment.fileName, message.attachment.contentType)}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-                <Text style={{ marginTop: 4, color: tokens.colors.textMuted, textAlign: "right" }}>
-                  {new Date(message.createdAt).toLocaleString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={{ color: tokens.colors.textMuted }}>Sem mensagens para exibir.</Text>
-        )}
-      </ScrollView>
-      <View style={{ borderTopWidth: 1, borderColor: tokens.colors.border, padding: 12, backgroundColor: tokens.colors.panel }}>
-        <TextInput
-          accessibilityLabel="Digite uma mensagem"
-          placeholder="Digite uma mensagem..."
-          value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={() => void handleSend()}
-          editable={canActOnConversation}
-          style={{ borderWidth: 1, borderColor: tokens.colors.border, borderRadius: 12, padding: 12, fontSize: 16 }}
-        />
-        <Pressable
-          onPress={() => void handleSend()}
-          disabled={!canActOnConversation || !draft.trim()}
-          style={{
-            marginTop: 10,
-            backgroundColor: tokens.colors.primary,
-            borderRadius: 10,
-            paddingVertical: 10,
-            opacity: !canActOnConversation || !draft.trim() ? 0.6 : 1,
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          ref={chatScrollViewRef}
+          contentContainerStyle={{ padding: 16, gap: 12 }}
+          onScroll={handleChatScroll}
+          onContentSizeChange={() => {
+            if (isChatPinnedToBottom) {
+              scrollChatToBottom(false);
+            }
           }}
+          scrollEventThrottle={16}
         >
-          <Text style={{ textAlign: "center", color: "#fff", fontWeight: "600" }}>Enviar</Text>
-        </Pressable>
+          {loadingThread ? (
+            <Text style={{ color: tokens.colors.textMuted }}>Carregando mensagens...</Text>
+          ) : thread?.messages.length ? (
+            thread.messages.map((message) => {
+              const operatorUserId = workspace?.operator.userId ?? "";
+              const messageOrigin = resolveThreadMessageOrigin(message.senderId, operatorUserId);
+              const isOwn = shouldRenderMessageOnRight(message.senderId, operatorUserId);
+              const isAssistant = messageOrigin === "assistant";
+              return (
+                <View key={message.id} style={{ alignSelf: isOwn ? "flex-end" : "flex-start", maxWidth: "82%" }}>
+                  {isAssistant ? (
+                    <Text style={{ marginBottom: 4, fontSize: 11, fontWeight: "600", color: tokens.colors.textMuted }}>IA</Text>
+                  ) : null}
+                  <View
+                    style={{
+                      backgroundColor: tokens.colors.panel,
+                      borderWidth: 1,
+                      borderColor: tokens.colors.border,
+                      borderRadius: 16,
+                      padding: 12,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16 }}>{message.body}</Text>
+                    {message.attachment ? (
+                      <Pressable onPress={() => void Linking.openURL(message.attachment!.url)} style={{ marginTop: 8 }}>
+                        <Text style={{ color: tokens.colors.primary, textDecorationLine: "underline" }}>
+                          {toAttachmentLabel(message.attachment.fileName, message.attachment.contentType)}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text style={{ marginTop: 4, color: tokens.colors.textMuted, textAlign: "right" }}>
+                    {new Date(message.createdAt).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={{ color: tokens.colors.textMuted }}>Sem mensagens para exibir.</Text>
+          )}
+        </ScrollView>
+        {!isChatPinnedToBottom ? (
+          <Pressable
+            onPress={handleJumpToLatestMessages}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar para o final da conversa"
+            testID="chat-scroll-to-latest-button"
+            style={{
+              position: "absolute",
+              right: 16,
+              bottom: 16,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: tokens.colors.primary,
+            }}
+          >
+            <Ionicons name="arrow-down" size={18} color="#fff" />
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={{ borderTopWidth: 1, borderColor: tokens.colors.border, padding: 12, backgroundColor: tokens.colors.panel }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10 }}>
+          <TextInput
+            accessibilityLabel="Digite uma mensagem"
+            placeholder="Digite uma mensagem..."
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={() => void handleSend()}
+            editable={canActOnConversation}
+            style={{ flex: 1, borderWidth: 1, borderColor: tokens.colors.border, borderRadius: 12, padding: 12, fontSize: 16 }}
+          />
+          <Pressable
+            onPress={() => void handleSend()}
+            accessibilityRole="button"
+            accessibilityLabel="Enviar mensagem"
+            disabled={!canActOnConversation || !draft.trim()}
+            style={{
+              width: 46,
+              height: 46,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: tokens.colors.primary,
+              borderRadius: 12,
+              opacity: !canActOnConversation || !draft.trim() ? 0.6 : 1,
+            }}
+          >
+            <Ionicons name="send" size={18} color="#fff" />
+          </Pressable>
+        </View>
         {errorMessage ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{errorMessage}</Text> : null}
         {shareError ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{shareError}</Text> : null}
       </View>
