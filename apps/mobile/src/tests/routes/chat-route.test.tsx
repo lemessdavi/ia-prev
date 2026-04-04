@@ -90,6 +90,7 @@ vi.mock("react-native", () => {
     View: element("div"),
     Text: element("span"),
     Pressable: element("button"),
+    Modal: ({ children, visible }: { children: ReactNode; visible?: boolean }) => (visible ? <div>{children}</div> : null),
     TextInput: element("input"),
     ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
     Linking: {
@@ -112,13 +113,13 @@ describe("Chat route", () => {
     setConversationTriageResultMock.mockResolvedValue(undefined);
   });
 
-  it("uses triage dropdown instead of legacy triage action buttons", async () => {
+  it("opens triage bottom sheet and updates selected status", async () => {
     useOperatorAppMock.mockReturnValue({
       isAuthenticated: true,
       thread: {
         conversationId: "c-1",
         title: "Conversa c-1",
-        triageResult: "N_A",
+        triageResult: "REVISAO_HUMANA",
         messages: [],
       },
       selectedConversationId: "c-1",
@@ -140,11 +141,21 @@ describe("Chat route", () => {
     const screen = render(<ChatScreen />);
 
     expect(screen.queryByText("Marcar apto")).toBeNull();
+    expect(screen.queryByText("Selecionar status da triagem")).toBeNull();
+
     fireEvent.click(screen.getByText("Triagem manual"));
-    fireEvent.click(screen.getByText("Nenhum (N/A)"));
+
+    expect(screen.getByText("Selecionar status da triagem")).toBeDefined();
+    expect(screen.getByText("Status atual")).toBeDefined();
+
+    fireEvent.click(screen.getByText("Apto"));
 
     await waitFor(() => {
-      expect(setConversationTriageResultMock).toHaveBeenCalledWith("N_A");
+      expect(setConversationTriageResultMock).toHaveBeenCalledWith("APTO");
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Selecionar status da triagem")).toBeNull();
     });
   });
 });
