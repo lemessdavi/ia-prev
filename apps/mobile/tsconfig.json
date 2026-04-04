@@ -4,10 +4,13 @@
     "strict": true,
     "paths": {
       "@/*": [
-        "./*"
+        "./src/*"
       ],
       "config": [
         "../../packages/config/src/index.ts"
+      ],
+      "@repo/convex-backend": [
+        "../../packages/convex-backend/src/index.ts"
       ],
       "utils": [
         "../../packages/utils/src/index.ts"

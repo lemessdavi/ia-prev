@@ -2,15 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   BackendError,
+  closeConversationWithReason,
+  exportConversationAttachmentArchive,
   InMemoryBackendStore,
   createPrototypeAlignedFixtures,
-  getContactDossierWithEvents,
+  getContactProfileWithEvents,
+  getConversationThread,
+  getTenantWorkspaceSummary,
+  ingestWhatsAppWebhook,
+  listConversationsForInbox,
   listUsers,
   listConversationsWithUnreadBadge,
   loginWithUsernamePassword,
   markConversationAsRead,
   requireSession,
   resolveTenantByPhoneNumberId,
+  takeConversationHandoff,
   resetUserPassword,
   schema,
   sendMessage,
@@ -28,6 +35,90 @@ function loginAsSuperadmin(store: InMemoryBackendStore) {
   return loginWithUsernamePassword({ store, username: "ops.root", password: "Root@123456" });
 }
 
+function loginAsBruna(store: InMemoryBackendStore) {
+  return loginWithUsernamePassword({ store, username: "bruna.alves", password: "Bruna@123456" });
+}
+
+function buildInboundWebhookPayload(input: {
+  phoneNumberId: string;
+  messageId: string;
+  from: string;
+  type: "text" | "image" | "audio" | "document";
+  body?: string;
+  mediaId?: string;
+  mediaUrl?: string;
+  mimeType?: string;
+  fileName?: string;
+  timestamp?: string;
+}) {
+  const message =
+    input.type === "text"
+      ? {
+          id: input.messageId,
+          from: input.from,
+          timestamp: input.timestamp ?? "1700000000",
+          type: "text" as const,
+          text: { body: input.body ?? "mensagem texto" },
+        }
+      : input.type === "image"
+        ? {
+            id: input.messageId,
+            from: input.from,
+            timestamp: input.timestamp ?? "1700000000",
+            type: "image" as const,
+            image: {
+              id: input.mediaId ?? `media_${input.messageId}`,
+              mime_type: input.mimeType ?? "image/jpeg",
+              caption: input.body ?? "imagem recebida",
+              url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.jpg`,
+            },
+          }
+        : input.type === "audio"
+          ? {
+              id: input.messageId,
+              from: input.from,
+              timestamp: input.timestamp ?? "1700000000",
+              type: "audio" as const,
+              audio: {
+                id: input.mediaId ?? `media_${input.messageId}`,
+                mime_type: input.mimeType ?? "audio/ogg",
+                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.ogg`,
+              },
+            }
+          : {
+              id: input.messageId,
+              from: input.from,
+              timestamp: input.timestamp ?? "1700000000",
+              type: "document" as const,
+              document: {
+                id: input.mediaId ?? `media_${input.messageId}`,
+                filename: input.fileName ?? "documento.pdf",
+                mime_type: input.mimeType ?? "application/pdf",
+                url: input.mediaUrl ?? `https://cdn.iaprev.com/media/${input.messageId}.pdf`,
+              },
+            };
+
+  return {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "entry_1",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              metadata: {
+                phone_number_id: input.phoneNumberId,
+              },
+              messages: [message],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 test("list conversations returns unread badge", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   const rows = listConversationsWithUnreadBadge({ session: loginAsAna(store), store });
@@ -37,11 +128,11 @@ test("list conversations returns unread badge", () => {
   assert.equal(rows[0]?.unreadCount, 2);
 });
 
-test("dossier query returns recent events", () => {
+test("contactProfile query returns recent events", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = getContactDossierWithEvents({ session: loginAsAna(store), contactId: "usr_caio", store });
+  const payload = getContactProfileWithEvents({ session: loginAsAna(store), contactId: "usr_caio", store });
 
-  assert.equal(payload.dossier.contactId, "usr_caio");
+  assert.equal(payload.contactProfile.contactId, "usr_caio");
   assert.equal(payload.recentEvents.length, 2);
   assert.equal(payload.recentEvents[0]?.id, "evt_2");
 });
@@ -158,7 +249,7 @@ test("forged session without persisted record is rejected", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
     () =>
-      getContactDossierWithEvents({
+      getContactProfileWithEvents({
         session: {
           sessionId: "sess_forged",
           userId: "usr_ana",
@@ -366,6 +457,380 @@ test("routing fails closed when phone_number_id is unknown", () => {
       resolveTenantByPhoneNumberId({
         phoneNumberId: "waba_phone_unknown",
         store,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "NOT_FOUND");
+      return true;
+    },
+  );
+});
+
+test("webhook ingestion isolates tenant routing between tenant A and B", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+
+  const legalPayload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_legal_001",
+    from: "5511999991001",
+    type: "text",
+    body: "Mensagem para tenant legal",
+  });
+  const clinicPayload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_clinic_001",
+    from: "5511999992002",
+    type: "text",
+    body: "Mensagem para tenant clinic",
+  });
+
+  const legalResult = ingestWhatsAppWebhook({ payload: legalPayload, store, now: 1_600_000 });
+  const clinicResult = ingestWhatsAppWebhook({ payload: clinicPayload, store, now: 1_600_500 });
+
+  assert.equal(legalResult.status, "processed");
+  assert.equal(legalResult.tenantId, "tenant_legal");
+  assert.equal(clinicResult.status, "processed");
+  assert.equal(clinicResult.tenantId, "tenant_clinic");
+
+  const snapshot = store.snapshot();
+  const legalMessage = snapshot.messages.find((item) => item.id === legalResult.messageId);
+  const clinicMessage = snapshot.messages.find((item) => item.id === clinicResult.messageId);
+
+  assert.equal(legalMessage?.tenantId, "tenant_legal");
+  assert.equal(legalMessage?.body, "Mensagem para tenant legal");
+  assert.equal(clinicMessage?.tenantId, "tenant_clinic");
+  assert.equal(clinicMessage?.body, "Mensagem para tenant clinic");
+  assert.notEqual(legalMessage?.tenantId, clinicMessage?.tenantId);
+});
+
+test("webhook ingestion fails closed when phone_number_id is unknown", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const before = store.snapshot();
+
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_unknown",
+    messageId: "wamid_unknown_001",
+    from: "5511999993003",
+    type: "text",
+    body: "Mensagem sem mapeamento",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_601_000 });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "unmapped_phone_number_id");
+
+  const after = store.snapshot();
+  assert.equal(after.messages.length, before.messages.length);
+  assert.equal(after.attachments.length, before.attachments.length);
+  assert.ok(after.auditLogs.some((log) => log.action === "webhook.routing.failed" && log.targetId === "waba_phone_unknown"));
+});
+
+test("webhook ingestion is idempotent for reprocessed webhook id", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_idempotent_001",
+    from: "5511999994004",
+    type: "text",
+    body: "Teste de idempotencia",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload, store, now: 1_602_000 });
+  const second = ingestWhatsAppWebhook({ payload, store, now: 1_602_100 });
+
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "ignored");
+  assert.equal(second.deduplicated, true);
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
+});
+
+test("webhook ingestion does not collide different raw message ids with special chars", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payloadA = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid.A+B",
+    from: "5511999994100",
+    type: "text",
+    body: "Primeira mensagem",
+  });
+  const payloadB = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid.A/B",
+    from: "5511999994100",
+    type: "text",
+    body: "Segunda mensagem",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_200 });
+  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_300 });
+
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "processed");
+  assert.notEqual(first.messageId, second.messageId);
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.messages.filter((item) => item.id === first.messageId).length, 1);
+  assert.equal(snapshot.messages.filter((item) => item.id === second.messageId).length, 1);
+});
+
+test("webhook ingestion does not collide attachment ids with special chars", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payloadA = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_media_001",
+    from: "5511999994200",
+    type: "image",
+    mediaId: "media.A+B",
+    mimeType: "image/jpeg",
+  });
+  const payloadB = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_media_002",
+    from: "5511999994200",
+    type: "image",
+    mediaId: "media.A/B",
+    mimeType: "image/jpeg",
+  });
+
+  const first = ingestWhatsAppWebhook({ payload: payloadA, store, now: 1_602_400 });
+  const second = ingestWhatsAppWebhook({ payload: payloadB, store, now: 1_602_500 });
+  assert.equal(first.status, "processed");
+  assert.equal(second.status, "processed");
+
+  const snapshot = store.snapshot();
+  const firstAttachment = snapshot.attachments.find((item) => item.messageId === first.messageId);
+  const secondAttachment = snapshot.attachments.find((item) => item.messageId === second.messageId);
+
+  assert.ok(firstAttachment?.id);
+  assert.ok(secondAttachment?.id);
+  assert.notEqual(firstAttachment?.id, secondAttachment?.id);
+});
+
+test("webhook ingestion persists text message", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_text_001",
+    from: "5511999995005",
+    type: "text",
+    body: "Mensagem de texto inbound",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_603_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const message = snapshot.messages.find((item) => item.id === result.messageId);
+  assert.equal(message?.body, "Mensagem de texto inbound");
+  assert.equal(message?.attachmentUrl, undefined);
+});
+
+test("webhook ingestion persists image attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_legal_1",
+    messageId: "wamid_image_001",
+    from: "5511999996006",
+    type: "image",
+    body: "Comprovante em imagem",
+    mimeType: "image/jpeg",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_604_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_legal");
+  assert.equal(attachment?.contentType, "image/jpeg");
+});
+
+test("webhook ingestion persists audio attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_audio_001",
+    from: "5511999997007",
+    type: "audio",
+    mimeType: "audio/ogg",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_605_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_clinic");
+  assert.equal(attachment?.contentType, "audio/ogg");
+});
+
+test("webhook ingestion persists pdf attachment", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const payload = buildInboundWebhookPayload({
+    phoneNumberId: "waba_phone_clinic_1",
+    messageId: "wamid_pdf_001",
+    from: "5511999998008",
+    type: "document",
+    fileName: "laudo.pdf",
+    mimeType: "application/pdf",
+  });
+
+  const result = ingestWhatsAppWebhook({ payload, store, now: 1_606_000 });
+  assert.equal(result.status, "processed");
+
+  const snapshot = store.snapshot();
+  const attachment = snapshot.attachments.find((item) => item.messageId === result.messageId);
+  assert.equal(attachment?.tenantId, "tenant_clinic");
+  assert.equal(attachment?.contentType, "application/pdf");
+  assert.equal(attachment?.fileName, "laudo.pdf");
+});
+
+test("tenant workspace summary resolves tenant, waba and active ai profile for logged user", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const summary = getTenantWorkspaceSummary({ session, store });
+
+  assert.equal(summary.tenantId, "tenant_legal");
+  assert.equal(summary.tenantName, "Lemes Advocacia");
+  assert.equal(summary.wabaLabel, "Lemes Advocacia WABA");
+  assert.equal(summary.activeAiProfileName, "previdencia-triagem-v1");
+  assert.equal(summary.operator.userId, "usr_ana");
+});
+
+test("inbox list supports status filter and text search within tenant", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const allRows = listConversationsForInbox({ session, store });
+  assert.equal(allRows.length, 2);
+
+  const triageRows = listConversationsForInbox({
+    session,
+    store,
+    status: "EM_TRIAGEM",
+  });
+  assert.equal(triageRows.length, 1);
+  assert.equal(triageRows[0]?.conversationId, "conv_ana_marina");
+
+  const searchRows = listConversationsForInbox({
+    session,
+    store,
+    search: "caio",
+  });
+  assert.equal(searchRows.length, 1);
+  assert.equal(searchRows[0]?.conversationId, "conv_ana_caio");
+});
+
+test("conversation thread returns messages and attachments while preserving tenant isolation", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const legalSession = loginAsAna(store);
+
+  const thread = getConversationThread({
+    session: legalSession,
+    store,
+    conversationId: "conv_ana_caio",
+  });
+
+  assert.equal(thread.conversationId, "conv_ana_caio");
+  assert.equal(thread.messages.length, 3);
+  assert.ok(thread.messages.some((message) => message.attachment?.fileName === "laudo-medico.pdf"));
+
+  assert.throws(
+    () =>
+      getConversationThread({
+        session: loginAsBruna(store),
+        store,
+        conversationId: "conv_ana_caio",
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof BackendError);
+      assert.equal(err.code, "NOT_FOUND");
+      return true;
+    },
+  );
+});
+
+test("handoff mutation marks conversation in human attendance and stores event", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const result = takeConversationHandoff({
+    session,
+    store,
+    conversationId: "conv_ana_caio",
+    now: 1_900_000,
+  });
+
+  assert.equal(result.conversationId, "conv_ana_caio");
+  assert.equal(result.conversationStatus, "EM_ATENDIMENTO_HUMANO");
+
+  const snapshot = store.snapshot();
+  const handoff = snapshot.handoffEvents.find((event) => event.id === result.handoffEventId);
+  const conversation = snapshot.conversations.find((item) => item.id === "conv_ana_caio");
+  assert.equal(handoff?.to, "human");
+  assert.equal(handoff?.performedByUserId, "usr_ana");
+  assert.equal(conversation?.conversationStatus, "EM_ATENDIMENTO_HUMANO");
+});
+
+test("closing case requires reason and writes conversation/audit updates", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const session = loginAsAna(store);
+
+  const result = closeConversationWithReason({
+    session,
+    store,
+    conversationId: "conv_ana_caio",
+    reason: "Documentacao validada e caso concluido",
+    now: 1_910_000,
+  });
+
+  assert.equal(result.conversationId, "conv_ana_caio");
+  assert.equal(result.conversationStatus, "FECHADO");
+  assert.equal(result.closureReason, "Documentacao validada e caso concluido");
+
+  const snapshot = store.snapshot();
+  const conversation = snapshot.conversations.find((item) => item.id === "conv_ana_caio");
+  assert.equal(conversation?.conversationStatus, "FECHADO");
+  assert.equal(conversation?.closureReason, "Documentacao validada e caso concluido");
+  assert.ok(
+    snapshot.auditLogs.some(
+      (item) => item.action === "conversation.closed" && item.targetId === "conv_ana_caio" && item.tenantId === "tenant_legal",
+    ),
+  );
+});
+
+test("conversation attachment archive export returns zip metadata and blocks cross-tenant access", () => {
+  const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
+  const legalSession = loginAsAna(store);
+
+  const exported = exportConversationAttachmentArchive({
+    session: legalSession,
+    store,
+    conversationId: "conv_ana_caio",
+    now: 1_920_000,
+  });
+
+  assert.equal(exported.conversationId, "conv_ana_caio");
+  assert.equal(exported.tenantId, "tenant_legal");
+  assert.equal(exported.formatVersion, "conversation.attachments.zip.v1");
+  assert.equal(exported.zipFileName, "arquivos-conversa-conv_ana_caio.zip");
+  assert.ok(exported.zipDownloadUrl.includes("arquivos-conversa-conv_ana_caio.zip"));
+  assert.equal(exported.attachmentCount, exported.attachments.length);
+  assert.ok(exported.attachments.length >= 1);
+  assert.ok(exported.generatedAtIso.includes("T"));
+  const exportedRecord = exported as unknown as Record<string, unknown>;
+  assert.equal("pdfFileName" in exportedRecord, false);
+  assert.equal("pdfBytes" in exportedRecord, false);
+
+  assert.throws(
+    () =>
+      exportConversationAttachmentArchive({
+        session: loginAsBruna(store),
+        store,
+        conversationId: "conv_ana_caio",
       }),
     (err: unknown) => {
       assert.ok(err instanceof BackendError);

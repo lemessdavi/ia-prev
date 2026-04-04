@@ -88,6 +88,7 @@ export interface Conversation {
   participantIds: Id[];
   conversationStatus: ConversationStatus;
   triageResult: TriageResult;
+  closureReason?: string;
   title: string;
   lastMessagePreview: string;
   lastMessageAt: number;
@@ -137,7 +138,7 @@ export interface AuditLog {
   createdAt: number;
 }
 
-export interface DossierEvent {
+export interface ContactProfileEvent {
   id: Id;
   tenantId: TenantId;
   contactId: Id;
@@ -147,7 +148,7 @@ export interface DossierEvent {
   type: "interaction" | "status" | "note";
 }
 
-export interface Dossier {
+export interface ContactProfile {
   id: Id;
   tenantId: TenantId;
   contactId: Id;
@@ -171,8 +172,8 @@ export interface Database {
   attachments: Attachment[];
   handoffEvents: HandoffEvent[];
   auditLogs: AuditLog[];
-  dossiers: Dossier[];
-  dossierEvents: DossierEvent[];
+  contactProfiles: ContactProfile[];
+  contactProfileEvents: ContactProfileEvent[];
 }
 
 export interface ConversationListItem {
@@ -182,4 +183,68 @@ export interface ConversationListItem {
   lastMessageAt: number;
   lastActivityAt: number;
   unreadCount: number;
+}
+
+export interface TenantWorkspaceSummary {
+  tenantId: TenantId;
+  tenantName: string;
+  wabaLabel: string;
+  activeAiProfileName: string;
+  operator: {
+    userId: Id;
+    fullName: string;
+    username: string;
+  };
+}
+
+export interface ConversationInboxItem {
+  conversationId: Id;
+  title: string;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
+  closureReason?: string;
+  lastMessagePreview: string;
+  lastMessageAt: number;
+  lastActivityAt: number;
+  unreadCount: number;
+  hasAttachment: boolean;
+  hasHumanHandoff: boolean;
+}
+
+export interface ConversationThreadMessageAttachment {
+  id: Id;
+  fileName: string;
+  contentType: string;
+  url: string;
+}
+
+export interface ConversationThreadMessage {
+  id: Id;
+  senderId: Id;
+  body: string;
+  createdAt: number;
+  readBy: Id[];
+  attachment?: ConversationThreadMessageAttachment;
+}
+
+export interface ConversationThreadPayload {
+  conversationId: Id;
+  title: string;
+  conversationStatus: ConversationStatus;
+  triageResult: TriageResult;
+  closureReason?: string;
+  participantIds: Id[];
+  messages: ConversationThreadMessage[];
+  handoffEvents: HandoffEvent[];
+}
+
+export interface ConversationAttachmentArchiveExport {
+  formatVersion: "conversation.attachments.zip.v1";
+  tenantId: TenantId;
+  conversationId: Id;
+  generatedAtIso: string;
+  zipFileName: string;
+  zipDownloadUrl: string;
+  attachmentCount: number;
+  attachments: Attachment[];
 }

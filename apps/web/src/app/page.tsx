@@ -1,107 +1,933 @@
-import { tokens } from 'config'
-import { conversations, dossier, messages, tenant } from 'utils'
+"use client";
 
-const statusStyles = {
-  Apto: { backgroundColor: tokens.colors.successBg, color: tokens.colors.successText },
-  'Em triagem': { backgroundColor: tokens.colors.infoBg, color: tokens.colors.infoText },
-  'Revisão Humana': { backgroundColor: tokens.colors.warningBg, color: tokens.colors.warningText }
-} as const
+import { type FormEvent, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api as convexApi } from "@repo/convex-backend";
+import { tokens } from "config";
+import { useQuery } from "convex/react";
+import {
+  BackendApiClientError,
+  createBackendApiClient,
+  formatConversationStatusLabel,
+  resolveThreadMessageOrigin,
+  shouldRenderMessageOnRight,
+  type ConversationAttachmentArchiveDTO,
+  type ConversationStatus,
+  type TenantWorkspaceSummaryDTO,
+  type TriageResult,
+} from "utils";
+
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim() ?? "";
+const api = createBackendApiClient(convexUrl);
+const TOKEN_STORAGE_KEY = "iap.session.token";
+
+const statusStyles: Record<ConversationStatus, { backgroundColor: string; color: string }> = {
+  EM_TRIAGEM: { backgroundColor: tokens.colors.infoBg, color: tokens.colors.infoText },
+  PENDENTE_HUMANO: { backgroundColor: tokens.colors.warningBg, color: tokens.colors.warningText },
+  EM_ATENDIMENTO_HUMANO: { backgroundColor: tokens.colors.primary, color: "#ffffff" },
+  FECHADO: { backgroundColor: "#e4e4e7", color: "#3f3f46" },
+};
+const triageStyles: Record<TriageResult, { backgroundColor: string; color: string }> = {
+  APTO: { backgroundColor: "#dcfce7", color: "#166534" },
+  REVISAO_HUMANA: { backgroundColor: "#fef3c7", color: "#92400e" },
+  NAO_APTO: { backgroundColor: "#fee2e2", color: "#991b1b" },
+  N_A: { backgroundColor: "#e4e4e7", color: "#3f3f46" },
+};
+
+type InboxFilter = "ALL" | "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "FINALIZADO";
+
+const statusOptions: Array<{ label: string; value: InboxFilter }> = [
+  { label: "Todos", value: "ALL" },
+  { label: "Apto", value: "APTO" },
+  { label: "Revisao", value: "REVISAO_HUMANA" },
+  { label: "Nao apto", value: "NAO_APTO" },
+  { label: "Finalizado", value: "FINALIZADO" },
+];
+
+const CHAT_BOTTOM_THRESHOLD_PX = 72;
+
+type MobilePanel = "inbox" | "chat" | "files";
 
 export default function Home() {
-  const hasConversations = conversations.length > 0
-  const hasMessages = messages.length > 0
-  const hasDocuments = dossier.documents.length > 0
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<TenantWorkspaceSummaryDTO | null>(null);
+  const [conversationAttachmentArchive, setConversationAttachmentArchive] = useState<ConversationAttachmentArchiveDTO | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("inbox");
+
+  const [statusFilter, setStatusFilter] = useState<InboxFilter>("ALL");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [username, setUsername] = useState("ana.lima");
+  const [password, setPassword] = useState("Ana@123456");
+  const [messageDraft, setMessageDraft] = useState("");
+  const [closureReason, setClosureReason] = useState("");
+
+  const [authLoading, setAuthLoading] = useState(false);
+  const [loadingConversationAttachmentArchive, setLoadingConversationAttachmentArchive] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [performingAction, setPerformingAction] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryMessageBody, setRetryMessageBody] = useState<string | null>(null);
+  const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
+  const [hasUnreadMessagesOutOfView, setHasUnreadMessagesOutOfView] = useState(false);
+
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const isChatPinnedToBottomRef = useRef(true);
+  const previousThreadSnapshotRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
+    conversationId: null,
+    messageCount: 0,
+    lastMessageId: null,
+  });
+
+  const isAuthenticated = workspace !== null;
+  const statusQueryParam = statusFilter === "FINALIZADO" ? "FECHADO" : "ALL";
+  const conversationsQuery = useQuery(
+    convexApi.chat.listConversationsForInbox,
+    isAuthenticated && sessionToken
+      ? {
+          sessionToken,
+          status: statusQueryParam,
+          search,
+        }
+      : "skip",
+  );
+  const thread = useQuery(
+    convexApi.chat.getConversationThread,
+    isAuthenticated && sessionToken && selectedConversationId
+      ? {
+          sessionToken,
+          conversationId: selectedConversationId,
+        }
+      : "skip",
+  );
+  const conversations = useMemo(() => {
+    const rows = conversationsQuery ?? [];
+    if (statusFilter === "APTO" || statusFilter === "REVISAO_HUMANA" || statusFilter === "NAO_APTO") {
+      return rows.filter((row) => row.triageResult === statusFilter);
+    }
+
+    return rows;
+  }, [conversationsQuery, statusFilter]);
+  const loadingConversations = isAuthenticated && conversationsQuery === undefined;
+  const loadingThread = Boolean(isAuthenticated && selectedConversationId && thread === undefined);
+  const selectedConversation = useMemo(
+    () => conversations.find((item) => item.conversationId === selectedConversationId) ?? null,
+    [conversations, selectedConversationId],
+  );
+  const threadMessageCount = thread?.messages.length ?? 0;
+  const threadLastMessageId = thread?.messages[threadMessageCount - 1]?.id ?? null;
+
+  const clearSession = useCallback(() => {
+    api.setSessionToken(null);
+    setSessionToken(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+    setWorkspace(null);
+    setConversationAttachmentArchive(null);
+    setSelectedConversationId(null);
+    setMobilePanel("inbox");
+  }, []);
+
+  const toReadableError = useCallback(
+    (error: unknown, fallback: string) => {
+      if (error instanceof BackendApiClientError) {
+        if (error.code === "UNAUTHENTICATED") {
+          clearSession();
+        }
+        return error.message;
+      }
+      return fallback;
+    },
+    [clearSession],
+  );
+
+  const loadWorkspace = useCallback(async () => {
+    const data = await api.getWorkspace();
+    setWorkspace(data);
+  }, []);
+  const loadConversationAttachmentArchive = useCallback(
+    async (conversationId: string) => {
+      setLoadingConversationAttachmentArchive(true);
+      try {
+        const data = await api.exportConversationAttachmentArchive(conversationId);
+        setConversationAttachmentArchive(data);
+      } catch (error) {
+        setErrorMessage(toReadableError(error, "Falha ao carregar arquivos da conversa."));
+      } finally {
+        setLoadingConversationAttachmentArchive(false);
+      }
+    },
+    [toReadableError],
+  );
+
+  const isNearBottom = useCallback((element: HTMLDivElement) => {
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= CHAT_BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = chatScrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  }, []);
+
+  const handleChatScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const pinnedToBottom = isNearBottom(event.currentTarget);
+      if (isChatPinnedToBottomRef.current !== pinnedToBottom) {
+        isChatPinnedToBottomRef.current = pinnedToBottom;
+        setIsChatPinnedToBottom(pinnedToBottom);
+      }
+      if (pinnedToBottom) {
+        setHasUnreadMessagesOutOfView(false);
+      }
+    },
+    [isNearBottom],
+  );
+
+  const handleJumpToLatestMessages = useCallback(() => {
+    isChatPinnedToBottomRef.current = true;
+    setIsChatPinnedToBottom(true);
+    setHasUnreadMessagesOutOfView(false);
+    scrollChatToBottom("smooth");
+  }, [scrollChatToBottom]);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const existingToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!existingToken) return;
+
+    api.setSessionToken(existingToken);
+    setSessionToken(existingToken);
+    setErrorMessage(null);
+    void (async () => {
+      try {
+        await loadWorkspace();
+      } catch (error) {
+        clearSession();
+        setErrorMessage(toReadableError(error, "Nao foi possivel restaurar a sessao."));
+      }
+    })();
+  }, [clearSession, loadWorkspace, toReadableError]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !conversationsQuery) return;
+    if (!selectedConversationId && conversationsQuery[0]) {
+      setSelectedConversationId(conversationsQuery[0].conversationId);
+      return;
+    }
+    if (selectedConversationId && !conversationsQuery.some((row) => row.conversationId === selectedConversationId)) {
+      setSelectedConversationId(conversationsQuery[0]?.conversationId ?? null);
+    }
+  }, [conversationsQuery, isAuthenticated, selectedConversationId]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !selectedConversationId) {
+      setConversationAttachmentArchive(null);
+      return;
+    }
+
+    setErrorMessage(null);
+    void api.markConversationAsRead(selectedConversationId).catch((error: unknown) => {
+      setErrorMessage(toReadableError(error, "Falha ao marcar conversa como lida."));
+    });
+    void loadConversationAttachmentArchive(selectedConversationId);
+  }, [isAuthenticated, loadConversationAttachmentArchive, selectedConversationId, toReadableError]);
+
+  useEffect(() => {
+    setRetryMessageBody(null);
+    if (!selectedConversationId) {
+      setHasUnreadMessagesOutOfView(false);
+      isChatPinnedToBottomRef.current = true;
+      setIsChatPinnedToBottom(true);
+    }
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    const previous = previousThreadSnapshotRef.current;
+    const conversationChanged = previous.conversationId !== selectedConversationId;
+    const newMessagesOnSameConversation =
+      previous.conversationId === selectedConversationId &&
+      (threadMessageCount > previous.messageCount ||
+        (threadMessageCount > 0 && threadMessageCount === previous.messageCount && threadLastMessageId !== previous.lastMessageId));
+
+    const updateSnapshot = () => {
+      previousThreadSnapshotRef.current = {
+        conversationId: selectedConversationId,
+        messageCount: threadMessageCount,
+        lastMessageId: threadLastMessageId,
+      };
+    };
+
+    if (conversationChanged) {
+      isChatPinnedToBottomRef.current = true;
+      setIsChatPinnedToBottom(true);
+      setHasUnreadMessagesOutOfView(false);
+      updateSnapshot();
+      if (!selectedConversationId) return;
+      if (typeof window === "undefined") return;
+      const raf = window.requestAnimationFrame(() => {
+        scrollChatToBottom("auto");
+      });
+      return () => window.cancelAnimationFrame(raf);
+    }
+
+    if (newMessagesOnSameConversation) {
+      updateSnapshot();
+      if (isChatPinnedToBottomRef.current) {
+        if (typeof window === "undefined") return;
+        const raf = window.requestAnimationFrame(() => {
+          scrollChatToBottom("smooth");
+        });
+        return () => window.cancelAnimationFrame(raf);
+      }
+      setHasUnreadMessagesOutOfView(true);
+      return;
+    }
+
+    updateSnapshot();
+  }, [scrollChatToBottom, selectedConversationId, threadLastMessageId, threadMessageCount]);
+
+  useEffect(() => {
+    if (mobilePanel !== "chat") return;
+    if (!isChatPinnedToBottomRef.current) return;
+    if (!selectedConversationId) return;
+    if (typeof window === "undefined") return;
+    const raf = window.requestAnimationFrame(() => {
+      scrollChatToBottom("auto");
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [mobilePanel, scrollChatToBottom, selectedConversationId]);
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await api.login(username, password);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(TOKEN_STORAGE_KEY, response.sessionToken);
+      }
+      setSessionToken(response.sessionToken);
+      await loadWorkspace();
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha no login."));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      // noop
+    } finally {
+      clearSession();
+    }
+  }
+
+  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedConversationId || !messageDraft.trim()) return;
+
+    const outboundBody = messageDraft.trim();
+    setSendingMessage(true);
+    setErrorMessage(null);
+    try {
+      await api.sendMessage(selectedConversationId, outboundBody);
+      setMessageDraft("");
+      setRetryMessageBody(null);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
+      setRetryMessageBody(outboundBody);
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function handleRetryMessageSend() {
+    if (!selectedConversationId || !retryMessageBody) return;
+
+    setSendingMessage(true);
+    setErrorMessage(null);
+    try {
+      await api.sendMessage(selectedConversationId, retryMessageBody);
+      setMessageDraft("");
+      setRetryMessageBody(null);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao reenviar mensagem."));
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function handleTakeHandoff() {
+    if (!selectedConversationId) return;
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      await api.takeHandoff(selectedConversationId);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  async function handleSetConversationTriageResult(result: TriageResult) {
+    if (!selectedConversationId) return;
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      await api.setConversationTriageResult(selectedConversationId, result);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao atualizar resultado da triagem."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  async function handleCloseConversation() {
+    if (!selectedConversationId) return;
+    if (!closureReason.trim()) {
+      setErrorMessage("Informe o motivo do encerramento.");
+      return;
+    }
+
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      await api.closeConversation(selectedConversationId, closureReason.trim());
+      setClosureReason("");
+      await loadConversationAttachmentArchive(selectedConversationId);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao encerrar caso."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  async function handleExportConversationAttachmentArchiveZip() {
+    if (!selectedConversationId) return;
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      const payload = await api.exportConversationAttachmentArchive(selectedConversationId);
+      setConversationAttachmentArchive(payload);
+      downloadFileFromUrl(payload.zipDownloadUrl, payload.zipFileName);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao exportar ZIP de anexos."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  if (!convexUrl) {
+    return (
+      <main className="min-h-screen bg-zinc-50 p-8" data-testid="convex-url-missing-screen">
+        {isHydrated ? <span data-testid="app-hydrated" hidden /> : null}
+        <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-6">
+          <h1 className="text-2xl font-semibold">Convex URL nao configurada</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            Defina <code>NEXT_PUBLIC_CONVEX_URL</code> para conectar o frontend ao backend Convex.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen p-4 md:p-8" style={{ backgroundColor: "#f3f4f6" }} data-testid="login-screen">
+        {isHydrated ? <span data-testid="app-hydrated" hidden /> : null}
+        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[28px] border bg-white shadow-xl md:grid-cols-2">
+          <section className="relative hidden md:block" style={{ background: "linear-gradient(140deg, #0f172a, #1e3a8a)" }}>
+            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#fff 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
+            <div className="relative flex h-full flex-col justify-between p-10 text-white">
+              <div>
+                <p className="inline-flex rounded-full border border-white/40 px-3 py-1 text-xs uppercase tracking-[0.2em]">
+                  IA Prev
+                </p>
+                <h1 className="mt-5 max-w-sm text-4xl font-semibold leading-tight">Atendimento por IA com você sob controle.</h1>
+              </div>
+              <p className="max-w-sm text-sm text-blue-100">
+                Multiplataforma, avaliação de prospects, handoff e exportacao ZIP de anexos.
+              </p>
+            </div>
+          </section>
+          <section className="p-6 md:p-10" style={{ backgroundColor: "#fafafa" }} aria-label="Login do operador">
+            <h2 className="text-3xl font-semibold">Entrar</h2>
+            <p className="mt-2 text-sm text-zinc-500">Use um usuário valido para abrir a mesa de operacao.</p>
+            <form className="mt-8 space-y-4" onSubmit={handleLogin} data-testid="login-form">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Usuario</span>
+                <input
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-3"
+                  value={username}
+                  data-testid="login-username-input"
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Senha</span>
+                <input
+                  type="password"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-3"
+                  value={password}
+                  data-testid="login-password-input"
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <button
+                type="submit"
+                className="w-full rounded-xl px-4 py-3 font-medium text-white"
+                style={{ backgroundColor: "#0f172a" }}
+                data-testid="login-submit-button"
+                disabled={authLoading}
+              >
+                {authLoading ? "Entrando..." : "Acessar painel"}
+              </button>
+            </form>
+            {errorMessage ? (
+              <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="global-error-banner">
+                {errorMessage}
+              </p>
+            ) : null}
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen p-1" style={{ backgroundColor: tokens.colors.bg, color: tokens.colors.text }}>
-      <div className="mx-auto grid h-[97vh] max-w-[1600px] grid-cols-[260px_360px_1fr_360px] overflow-hidden rounded-2xl border" style={{ borderColor: tokens.colors.border, backgroundColor: tokens.colors.panel }}>
-        <aside className="border-r p-6" style={{ borderColor: tokens.colors.border }} aria-label="Navegação lateral">
-          <h1 className="text-3xl font-semibold">{tenant.tenantName}</h1>
-          <p className="mt-2 text-base" style={{ color: tokens.colors.textMuted }}>WhatsApp: {tenant.wabaLabel}</p>
-          <p className="mt-1 text-base" style={{ color: tokens.colors.textMuted }}>IA ativa: {tenant.activeAiProfileName}</p>
-          <nav className="mt-10 space-y-6 text-2xl" aria-label="Menu principal">
-            <p>Conversas</p>
-            <p className="text-zinc-500">Relatórios</p>
-          </nav>
-          <button className="mt-[42rem] text-xl" aria-label="Sair">Sair</button>
-        </aside>
-
-        <section className="border-r" style={{ borderColor: tokens.colors.border }} aria-label="Lista de conversas">
-          <div className="border-b p-4" style={{ borderColor: tokens.colors.border }}>
-            <input aria-label="Buscar conversa" placeholder="Buscar nome ou telefone..." className="w-full rounded-xl border px-4 py-3 text-lg" style={{ borderColor: tokens.colors.border }} />
-            <div className="mt-4 flex gap-2 text-base">
-              {['Todos', 'Em triagem', 'Apto'].map((item, index) => (
-                <button key={item} className="rounded-xl px-3 py-2" style={index === 0 ? { backgroundColor: tokens.colors.primary, color: '#fff' } : { backgroundColor: '#eee' }}>{item}</button>
-              ))}
-            </div>
-          </div>
-          {hasConversations ? (
-            conversations.map((conversation) => (
-              <article key={conversation.id} className="border-b p-5" style={{ borderColor: tokens.colors.border, backgroundColor: conversation.selected ? '#fafafa' : 'transparent' }}>
-                <div className="flex items-start justify-between">
-                  <h2 className="text-3xl font-medium">{conversation.name}</h2>
-                  <span className="text-xl text-zinc-500">{conversation.time}</span>
-                </div>
-                <p className="mt-2 text-2xl text-zinc-500">{conversation.preview}</p>
-                <span className="mt-3 inline-block rounded-lg px-2 py-1 text-xl" style={statusStyles[conversation.status]}>{conversation.status}</span>
-              </article>
-            ))
-          ) : (
-            <p className="p-5 text-xl" style={{ color: tokens.colors.textMuted }}>Nenhuma conversa disponível para este tenant.</p>
-          )}
-        </section>
-
-        <section className="flex flex-col border-r" style={{ borderColor: tokens.colors.border }} aria-label="Chat">
-          <header className="flex items-center justify-between border-b p-5" style={{ borderColor: tokens.colors.border }}>
+    <main className="h-screen w-screen overflow-hidden bg-white" style={{ color: tokens.colors.text }}>
+      {isHydrated ? <span data-testid="app-hydrated" hidden /> : null}
+      <div className="flex h-full w-full flex-col">
+        <header className="border-b border-zinc-200 bg-zinc-50 px-4 py-3 md:px-6 md:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-3xl font-medium">Carlos Mendes</h2>
-              <p className="text-xl" style={{ color: tokens.colors.textMuted }}>Fluxo: Auxílio-Acidente</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Tenant atual</p>
+              <h1 className="text-2xl font-semibold" data-testid="workspace-tenant-name">
+                {workspace.tenantName}
+              </h1>
+              <p className="text-sm text-zinc-500" data-testid="workspace-waba-profile">
+                {workspace.wabaLabel} • IA: {workspace.activeAiProfileName}
+              </p>
             </div>
-            <button className="rounded-xl px-6 py-3 text-xl text-white" style={{ backgroundColor: tokens.colors.primary }}>Assumir Conversa</button>
-          </header>
-          <div className="flex-1 space-y-6 overflow-auto p-6">
-            {hasMessages ? (
-              messages.map((message) => (
-                <div key={message.id} className={message.from === 'client' ? 'ml-auto max-w-[65%]' : 'max-w-[75%]'}>
-                  <div className="rounded-3xl border p-5 text-3xl leading-snug" style={{ borderColor: tokens.colors.border, backgroundColor: '#f6f6f7' }}>{message.text}</div>
-                  <p className="mt-1 text-right text-xl" style={{ color: tokens.colors.textMuted }}>{message.time}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-xl" style={{ color: tokens.colors.textMuted }}>Sem mensagens para exibir.</p>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-zinc-300 px-3 py-1 text-xs text-zinc-600" data-testid="workspace-operator-name">
+                {workspace.operator.fullName}
+              </span>
+              <button onClick={handleLogout} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm hover:bg-zinc-100" data-testid="logout-button">
+                Sair
+              </button>
+            </div>
           </div>
-          <footer className="border-t p-4" style={{ borderColor: tokens.colors.border }}>
-            <label htmlFor="message" className="sr-only">Digite uma mensagem</label>
-            <input id="message" className="w-full rounded-2xl border px-5 py-4 text-2xl" style={{ borderColor: tokens.colors.border }} placeholder="Digite uma mensagem..." />
-          </footer>
-        </section>
+          <div className="mt-3 grid grid-cols-3 gap-2 lg:hidden">
+            <button
+              className={`rounded-lg px-3 py-2 text-sm ${mobilePanel === "inbox" ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"}`}
+              onClick={() => setMobilePanel("inbox")}
+              data-testid="mobile-tab-inbox"
+            >
+              Inbox
+            </button>
+            <button
+              className={`rounded-lg px-3 py-2 text-sm ${mobilePanel === "chat" ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"}`}
+              onClick={() => setMobilePanel("chat")}
+              data-testid="mobile-tab-chat"
+            >
+              Chat
+            </button>
+            <button
+              className={`rounded-lg px-3 py-2 text-sm ${mobilePanel === "files" ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"}`}
+              onClick={() => setMobilePanel("files")}
+              data-testid="mobile-tab-files"
+            >
+              Arquivos
+            </button>
+          </div>
+        </header>
 
-        <aside className="p-6" aria-label="Dossiê do caso">
-          <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-semibold">Dossiê do Caso</h2>
-            <span className="rounded-xl px-3 py-1" style={statusStyles.Apto}>Apto</span>
+        {errorMessage ? (
+          <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 md:px-6" data-testid="global-error-banner">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        <div className="min-h-0 flex-1">
+          <div className="grid h-full lg:grid-cols-12">
+            <section
+              className={`${mobilePanel === "inbox" ? "flex" : "hidden"} h-full min-h-0 flex-col border-zinc-200 bg-white lg:col-span-4 lg:flex lg:border-r`}
+              aria-label="Lista de conversas"
+            >
+              <div className="border-b border-zinc-200 p-4">
+                <input
+                  aria-label="Buscar conversa"
+                  placeholder="Buscar por nome ou mensagem..."
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm"
+                  value={searchInput}
+                  data-testid="inbox-search-input"
+                  onChange={(event) => setSearchInput(event.target.value)}
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {statusOptions.map((item) => (
+                    <button
+                      key={item.value}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                        item.value === statusFilter ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"
+                      }`}
+                      data-testid={`status-filter-${item.value}`}
+                      onClick={() => setStatusFilter(item.value)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
+                {loadingConversations ? (
+                  <p className="p-4 text-sm text-zinc-500" data-testid="inbox-loading-state">
+                    Carregando conversas...
+                  </p>
+                ) : conversations.length > 0 ? (
+                  conversations.map((conversation) => (
+                    <button
+                      key={conversation.conversationId}
+                      className="block w-full border-b border-zinc-200 p-4 text-left transition hover:bg-zinc-50"
+                      data-testid={`conversation-item-${conversation.conversationId}`}
+                      style={{
+                        backgroundColor: conversation.conversationId === selectedConversationId ? "#f4f4f5" : undefined,
+                      }}
+                      onClick={() => {
+                        setSelectedConversationId(conversation.conversationId);
+                        setMobilePanel("chat");
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-xl font-semibold leading-tight">{conversation.title}</h3>
+                        <span className="text-xs text-zinc-500">{formatTime(conversation.lastActivityAt)}</span>
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-sm text-zinc-600">{conversation.lastMessagePreview}</p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="rounded-md px-2 py-1 text-xs font-medium" style={triageStyles[conversation.triageResult]}>
+                          {toTriageLabel(conversation.triageResult)}
+                        </span>
+                        <span
+                          className="rounded-md px-2 py-1 text-xs font-medium"
+                          data-testid={`conversation-status-${conversation.conversationId}`}
+                          style={statusStyles[conversation.conversationStatus]}
+                        >
+                          {formatConversationStatusLabel(conversation.conversationStatus)}
+                        </span>
+                        {conversation.unreadCount > 0 ? (
+                          <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-xs text-white">{conversation.unreadCount}</span>
+                        ) : null}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <p className="p-4 text-sm text-zinc-500">Nenhuma conversa para os filtros atuais.</p>
+                )}
+              </div>
+            </section>
+
+            <section
+              className={`${mobilePanel === "chat" ? "flex" : "hidden"} relative h-full min-h-0 flex-col border-zinc-200 bg-white lg:col-span-5 lg:flex lg:border-r`}
+              aria-label="Chat da conversa"
+            >
+              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-4">
+                <div>
+                  <h2 className="text-2xl font-semibold" data-testid="chat-title">
+                    {selectedConversation?.title ?? "Selecione uma conversa"}
+                  </h2>
+                  <p className="text-sm text-zinc-500" data-testid="chat-triage">
+                    Fluxo: {thread ? toTriageLabel(thread.triageResult) : "N/A"}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    onClick={handleTakeHandoff}
+                    data-testid="handoff-button"
+                    disabled={!selectedConversationId || performingAction}
+                  >
+                    Assumir conversa
+                  </button>
+                  <label className="flex w-full flex-col gap-1 text-xs text-zinc-500">
+                    Triagem manual
+                    <select
+                      className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-40"
+                      data-testid="manual-triage-select"
+                      value={thread?.triageResult ?? "N_A"}
+                      onChange={(event) => void handleSetConversationTriageResult(event.target.value as TriageResult)}
+                      disabled={!selectedConversationId || performingAction}
+                    >
+                      <option value="N_A">Nenhum (N/A)</option>
+                      <option value="APTO">Apto</option>
+                      <option value="REVISAO_HUMANA">Revisao humana</option>
+                      <option value="NAO_APTO">Nao apto</option>
+                    </select>
+                  </label>
+                </div>
+              </header>
+              <div
+                ref={chatScrollContainerRef}
+                className="min-h-0 flex-1 space-y-4 overflow-auto overscroll-y-contain p-4"
+                data-testid="chat-messages-scroll-container"
+                onScroll={handleChatScroll}
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
+                aria-label="Historico da conversa"
+              >
+                {loadingThread ? (
+                  <p className="text-sm text-zinc-500" data-testid="thread-loading-state">
+                    Carregando mensagens...
+                  </p>
+                ) : thread?.messages.length ? (
+                  thread.messages.map((message) => {
+                    const messageOrigin = resolveThreadMessageOrigin(message.senderId, workspace.operator.userId);
+                    const isOwn = shouldRenderMessageOnRight(message.senderId, workspace.operator.userId);
+                    const isAssistant = messageOrigin === "assistant";
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
+                        data-testid={`thread-message-${message.id}`}
+                        data-message-origin={messageOrigin}
+                        data-message-side={isOwn ? "right" : "left"}
+                      >
+                        <div className={`max-w-[86%] rounded-2xl border px-4 py-3 text-sm ${isOwn ? "bg-zinc-900 text-white" : "bg-zinc-50 text-zinc-900"}`}>
+                          {isAssistant ? (
+                            <p className={`mb-2 flex items-center gap-1 text-[11px] font-semibold ${isOwn ? "text-zinc-300" : "text-zinc-500"}`}>
+                              <span aria-hidden>🤖</span>
+                              <span data-testid={`thread-message-ai-badge-${message.id}`}>IA</span>
+                            </p>
+                          ) : null}
+                          <p>{message.body}</p>
+                          {message.attachment ? (
+                            <a
+                              className={`mt-2 block text-xs underline ${isOwn ? "text-zinc-200" : "text-zinc-600"}`}
+                              href={message.attachment.url}
+                              data-testid={`thread-message-attachment-${message.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {formatAttachmentLabel(message.attachment.fileName, message.attachment.contentType)}
+                            </a>
+                          ) : null}
+                          <p className={`mt-2 text-[11px] ${isOwn ? "text-zinc-300" : "text-zinc-500"}`}>{formatDateTime(message.createdAt)}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-zinc-500">Sem mensagens para exibir.</p>
+                )}
+              </div>
+              {hasUnreadMessagesOutOfView && !isChatPinnedToBottom ? (
+                <button
+                  type="button"
+                  className="absolute bottom-24 right-4 z-10 rounded-full bg-zinc-900 px-3 py-2 text-xs font-medium text-white shadow-lg"
+                  data-testid="chat-scroll-to-latest-button"
+                  onClick={handleJumpToLatestMessages}
+                >
+                  Ver mensagens novas
+                </button>
+              ) : null}
+              <footer className="border-t border-zinc-200 p-4">
+                <form className="flex items-end gap-2" onSubmit={handleSendMessage} data-testid="chat-send-form">
+                  <input
+                    className="flex-1 rounded-xl border border-zinc-300 px-3 py-2.5 text-sm"
+                    placeholder="Digite uma mensagem..."
+                    value={messageDraft}
+                    data-testid="chat-message-input"
+                    onChange={(event) => setMessageDraft(event.target.value)}
+                    disabled={!selectedConversationId || sendingMessage}
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+                    data-testid="chat-send-button"
+                    disabled={!selectedConversationId || sendingMessage || !messageDraft.trim()}
+                  >
+                    Enviar
+                  </button>
+                </form>
+                {retryMessageBody ? (
+                  <button
+                    type="button"
+                    className="mt-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+                    data-testid="chat-retry-send-button"
+                    onClick={handleRetryMessageSend}
+                    disabled={!selectedConversationId || sendingMessage}
+                  >
+                    Tentar enviar novamente
+                  </button>
+                ) : null}
+              </footer>
+            </section>
+
+            <aside
+              className={`${mobilePanel === "files" ? "block" : "hidden"} h-full overflow-auto border-zinc-200 bg-white lg:col-span-3 lg:block`}
+              aria-label="Arquivos da conversa e acoes do caso"
+            >
+              <div className="border-b border-zinc-200 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-2xl font-semibold">Arquivos da conversa</h2>
+                  {thread ? (
+                    <span className="rounded-md px-2 py-1 text-xs font-medium" data-testid="conversation-files-status-badge" style={statusStyles[thread.conversationStatus]}>
+                      {formatConversationStatusLabel(thread.conversationStatus)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-4">
+                <section className="rounded-xl border border-zinc-200 p-3">
+                  <h3 className="text-xs uppercase tracking-wider text-zinc-500">Resumo da exportacao</h3>
+                  {loadingConversationAttachmentArchive ? (
+                    <p className="mt-2 text-sm text-zinc-500" data-testid="conversation-files-loading-state">
+                      Carregando arquivos da conversa...
+                    </p>
+                  ) : conversationAttachmentArchive ? (
+                    <>
+                      <p className="mt-3 text-lg font-semibold" data-testid="conversation-files-zip-name">
+                        {conversationAttachmentArchive.zipFileName}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        {conversationAttachmentArchive.attachmentCount} arquivo(s) pronto(s) para download.
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Gerado em {formatDateTime(Date.parse(conversationAttachmentArchive.generatedAtIso))}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-zinc-500">Selecione uma conversa para preparar o ZIP de anexos.</p>
+                  )}
+                </section>
+
+                <section className="rounded-xl border border-zinc-200 p-3">
+                  <h3 className="text-xs uppercase tracking-wider text-zinc-500">Anexos</h3>
+                  {conversationAttachmentArchive?.attachments.length ? (
+                    conversationAttachmentArchive.attachments.map((attachment) => (
+                      <a
+                        key={attachment.id}
+                        className="mt-2 block text-sm underline"
+                        href={attachment.url}
+                        data-testid={`conversation-files-attachment-${attachment.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {formatAttachmentLabel(attachment.fileName, attachment.contentType)}
+                      </a>
+                    ))
+                  ) : (
+                    <p className="mt-2 text-sm text-zinc-500">Nenhum anexo nesta conversa.</p>
+                  )}
+                </section>
+
+                <section className="rounded-xl border border-zinc-200 p-3">
+                  <h3 className="text-xs uppercase tracking-wider text-zinc-500">Acoes</h3>
+                  <button
+                    className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    onClick={handleExportConversationAttachmentArchiveZip}
+                    data-testid="conversation-files-export-button"
+                    disabled={!selectedConversationId || performingAction}
+                  >
+                    Exportar ZIP de anexos
+                  </button>
+                  <label htmlFor="closureReason" className="mt-3 block text-xs font-medium text-zinc-700">
+                    Motivo de encerramento
+                  </label>
+                  <textarea
+                    id="closureReason"
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    placeholder="Ex: documentacao validada e caso concluido"
+                    value={closureReason}
+                    data-testid="conversation-files-closure-reason-input"
+                    onChange={(event) => setClosureReason(event.target.value)}
+                  />
+                  <button
+                    className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
+                    onClick={handleCloseConversation}
+                    data-testid="conversation-files-close-button"
+                    disabled={!selectedConversationId || performingAction}
+                  >
+                    Encerrar caso
+                  </button>
+                </section>
+              </div>
+            </aside>
           </div>
-          <section className="mt-8 rounded-2xl border p-5" style={{ borderColor: tokens.colors.border }}>
-            <h3 className="text-xl uppercase text-zinc-500">Dados do cliente</h3>
-            <p className="mt-4 text-2xl font-medium">{dossier.name}</p>
-            <p className="mt-3 text-xl text-zinc-500">{dossier.phone}</p>
-            <p className="mt-3 text-xl text-zinc-500">{dossier.city}</p>
-            <p className="mt-6 text-xl" style={{ color: tokens.colors.successText }}>{dossier.consent}</p>
-            <p className="text-lg text-zinc-500">{dossier.consentAt}</p>
-          </section>
-          <section className="mt-6 rounded-2xl border p-5" style={{ borderColor: tokens.colors.border }}>
-            <h3 className="text-xl uppercase text-zinc-500">Documentos recebidos</h3>
-            {hasDocuments ? (
-              dossier.documents.map((doc) => (
-                <p key={doc} className="mt-4 text-2xl">{doc}</p>
-              ))
-            ) : (
-              <p className="mt-4 text-xl" style={{ color: tokens.colors.textMuted }}>Nenhum documento recebido.</p>
-            )}
-          </section>
-        </aside>
+        </div>
       </div>
     </main>
-  )
+  );
+}
+
+function toTriageLabel(result: string): string {
+  switch (result) {
+    case "APTO":
+      return "Apto";
+    case "REVISAO_HUMANA":
+      return "Revisao humana";
+    case "NAO_APTO":
+      return "Nao apto";
+    case "N_A":
+      return "N/A";
+    default:
+      return result;
+  }
+}
+
+function formatAttachmentLabel(fileName: string, contentType: string): string {
+  if (contentType.includes("audio")) return `Reproduzir audio: ${fileName}`;
+  if (contentType.includes("image")) return `Visualizar imagem: ${fileName}`;
+  if (contentType.includes("pdf")) return `Visualizar PDF: ${fileName}`;
+  return `Baixar arquivo: ${fileName}`;
+}
+
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function downloadFileFromUrl(url: string, fileName: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  anchor.click();
 }

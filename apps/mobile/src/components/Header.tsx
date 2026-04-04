@@ -15,7 +15,7 @@ export function Header({ title = "Universal React Monorepo", subtitle, showNav =
 
         {showNav && (
           <View className="flex-row items-center gap-4">
-            <Link href="/(tabs)/demo" asChild>
+            <Link href="/" asChild>
               <Pressable>
                 <Text className="text-sm text-gray-600">Components</Text>
               </Pressable>

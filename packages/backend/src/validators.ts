@@ -1,4 +1,5 @@
 import { BackendError } from "./errors";
+import type { ConversationStatus } from "./types";
 
 export function assertId(value: string, field: string): string {
   if (!value || typeof value !== "string" || value.trim().length < 3) {
@@ -58,4 +59,49 @@ export function assertAttachmentUrl(attachmentUrl?: string): string | undefined 
     });
   }
   return attachmentUrl;
+}
+
+export function assertConversationStatusFilter(status?: string): ConversationStatus | "ALL" {
+  if (!status) return "ALL";
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "ALL") return "ALL";
+
+  const allowedStatuses: ConversationStatus[] = ["EM_TRIAGEM", "PENDENTE_HUMANO", "EM_ATENDIMENTO_HUMANO", "FECHADO"];
+  if ((allowedStatuses as string[]).includes(normalized)) {
+    return normalized as ConversationStatus;
+  }
+
+  throw new BackendError("Invalid conversation status filter.", "BAD_REQUEST", { status });
+}
+
+export function assertSearchTerm(search?: string): string | undefined {
+  if (search === undefined) return undefined;
+  if (typeof search !== "string") {
+    throw new BackendError("Search term must be a string.", "BAD_REQUEST");
+  }
+
+  const normalized = search.trim();
+  if (!normalized) return undefined;
+  if (normalized.length > 120) {
+    throw new BackendError("Search term must have up to 120 chars.", "BAD_REQUEST", {
+      length: normalized.length,
+    });
+  }
+
+  return normalized.toLowerCase();
+}
+
+export function assertClosureReason(reason: string): string {
+  if (!reason || typeof reason !== "string") {
+    throw new BackendError("Closure reason is required.", "BAD_REQUEST");
+  }
+
+  const normalized = reason.trim();
+  if (normalized.length < 5 || normalized.length > 320) {
+    throw new BackendError("Closure reason must be between 5 and 320 chars.", "BAD_REQUEST", {
+      length: normalized.length,
+    });
+  }
+
+  return normalized;
 }

@@ -4,12 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
+    "dev": "concurrently --kill-others-on-fail -n convex,apps \"pnpm convex:dev\" \"turbo dev --filter=web --filter=mobile\"",
+    "dev:apps": "turbo dev --filter=web --filter=mobile",
+    "dev:web": "pnpm --filter web dev",
+    "dev:mobile": "pnpm --filter mobile dev",
+    "build": "pnpm convex:codegen:if-configured && turbo build",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
-    "compile": "turbo typecheck",
-    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm convex:codegen:if-configured && turbo typecheck",
+    "compile": "pnpm run typecheck",
+    "test": "pnpm --filter @repo/convex-backend test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed --project=chromium-desktop --workers=1",
+    "test:e2e:debug": "PWDEBUG=1 playwright test --project=chromium-desktop --workers=1",
+    "test:e2e:ui": "playwright test --ui",
+    "convex:dev": "bash ./scripts/convex-dev-if-configured.sh",
+    "convex:dev:force": "pnpm --filter @repo/convex-backend dev",
+    "convex:codegen:if-configured": "bash ./scripts/convex-codegen-if-configured.sh",
+    "convex:codegen": "pnpm --filter @repo/convex-backend codegen",
+    "convex:seed": "pnpm --filter @repo/convex-backend seed",
     "backend:compile": "npm --prefix packages/backend run compile",
     "backend:test": "npm --prefix packages/backend run compile && npm --prefix packages/backend run test"
   },
@@ -18,6 +30,8 @@
   "license": "MIT",
   "packageManager": "pnpm@10.29.3",
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "concurrently": "^9.2.1",
     "turbo": "^2.7.2"
   },
   "pnpm": {

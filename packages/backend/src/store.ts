@@ -1,10 +1,16 @@
 import type {
+  AIProfile,
+  Attachment,
+  AuditLog,
   Conversation,
   Database,
-  DossierEvent,
+  ContactProfileEvent,
+  HandoffEvent,
   Message,
   StoredSession,
+  Tenant,
   TenantId,
+  TenantWabaAccount,
   User,
   UserAccount,
 } from "./types";
@@ -71,8 +77,26 @@ export class InMemoryBackendStore {
     return this.state.tenantWabaAccounts.find((mapping) => mapping.phoneNumberId === phoneNumberId);
   }
 
+  findTenantWabaByTenantId(tenantId: TenantId): TenantWabaAccount | undefined {
+    return this.state.tenantWabaAccounts.find((mapping) => mapping.tenantId === tenantId);
+  }
+
+  findTenantById(tenantId: TenantId): Tenant | undefined {
+    return this.state.tenants.find((tenant) => tenant.id === tenantId);
+  }
+
+  findActiveAIProfileByTenantId(tenantId: TenantId): AIProfile | undefined {
+    return this.state.aiProfiles.find((profile) => profile.tenantId === tenantId && profile.isActive);
+  }
+
   findConversation(conversationId: string, tenantId: TenantId): Conversation | undefined {
     return this.state.conversations.find((item) => item.id === conversationId && item.tenantId === tenantId);
+  }
+
+  findConversationByParticipant(participantId: string, tenantId: TenantId): Conversation | undefined {
+    return this.state.conversations.find(
+      (conversation) => conversation.tenantId === tenantId && conversation.participantIds.includes(participantId),
+    );
   }
 
   listMessages(conversationId: string, tenantId: TenantId): Message[] {
@@ -81,20 +105,58 @@ export class InMemoryBackendStore {
       .sort((a, b) => a.createdAt - b.createdAt);
   }
 
+  findMessage(messageId: string, tenantId: TenantId): Message | undefined {
+    return this.state.messages.find((message) => message.id === messageId && message.tenantId === tenantId);
+  }
+
   listConversationsByUser(userId: string, tenantId: TenantId): Conversation[] {
     return this.state.conversations
       .filter((conversation) => conversation.tenantId === tenantId && conversation.participantIds.includes(userId))
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }
 
-  listDossierEvents(contactId: string, tenantId: TenantId): DossierEvent[] {
-    return this.state.dossierEvents
+  listConversationsByTenant(tenantId: TenantId): Conversation[] {
+    return this.state.conversations
+      .filter((conversation) => conversation.tenantId === tenantId)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  }
+
+  listAttachments(conversationId: string, tenantId: TenantId): Attachment[] {
+    return this.state.attachments
+      .filter((attachment) => attachment.conversationId === conversationId && attachment.tenantId === tenantId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  listHandoffEvents(conversationId: string, tenantId: TenantId): HandoffEvent[] {
+    return this.state.handoffEvents
+      .filter((event) => event.conversationId === conversationId && event.tenantId === tenantId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  listContactProfileEvents(contactId: string, tenantId: TenantId): ContactProfileEvent[] {
+    return this.state.contactProfileEvents
       .filter((event) => event.contactId === contactId && event.tenantId === tenantId)
       .sort((a, b) => b.occurredAt - a.occurredAt);
   }
 
   insertMessage(message: Message): void {
     this.state.messages.push(message);
+  }
+
+  insertConversation(conversation: Conversation): void {
+    this.state.conversations.push(conversation);
+  }
+
+  insertAttachment(attachment: Attachment): void {
+    this.state.attachments.push(attachment);
+  }
+
+  insertAuditLog(auditLog: AuditLog): void {
+    this.state.auditLogs.push(auditLog);
+  }
+
+  insertHandoffEvent(event: HandoffEvent): void {
+    this.state.handoffEvents.push(event);
   }
 
   updateConversation(conversationId: string, tenantId: TenantId, patch: Partial<Conversation>): void {
@@ -114,8 +176,8 @@ export class InMemoryBackendStore {
     return updates;
   }
 
-  findDossier(contactId: string, tenantId: TenantId) {
-    return this.state.dossiers.find((dossier) => dossier.contactId === contactId && dossier.tenantId === tenantId);
+  findContactProfile(contactId: string, tenantId: TenantId) {
+    return this.state.contactProfiles.find((contactProfile) => contactProfile.contactId === contactId && contactProfile.tenantId === tenantId);
   }
 
   findUser(userId: string, tenantId: TenantId): User | undefined {

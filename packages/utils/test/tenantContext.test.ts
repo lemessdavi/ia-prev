@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTenantWorkspaceMocks } from "../src";
+import { createTenantWorkspaceMocks } from "../src/chatMocks";
 
 test("creates tenant-scoped workspace mocks with dynamic assistant identity", () => {
   const payload = createTenantWorkspaceMocks({
