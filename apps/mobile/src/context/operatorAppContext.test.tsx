@@ -20,9 +20,13 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-vi.mock("utils", () => ({
-  BackendApiClientError: hoisted.MockBackendApiClientError,
-}));
+vi.mock("utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("utils")>();
+  return {
+    ...actual,
+    BackendApiClientError: hoisted.MockBackendApiClientError,
+  };
+});
 
 type Conversation = {
   conversationId: string;
@@ -410,5 +414,63 @@ describe("OperatorAppProvider realtime behavior", () => {
 
     expect(mocks.backendClient.listConversations).toHaveBeenCalled();
     expect(mocks.backendClient.getConversationThread).toHaveBeenCalledWith("c-1");
+  });
+
+  it("classifies login error as blocking modal feedback", async () => {
+    mocks.backendClient.login.mockRejectedValueOnce(
+      new hoisted.MockBackendApiClientError("Invalid username or password.", "UNAUTHENTICATED", 401),
+    );
+
+    const app = renderProvider();
+    await act(async () => {
+      await app.getContext().login("ana.lima", "senha-invalida");
+    });
+
+    await waitFor(() => {
+      expect(app.getContext().blockingErrorMessage).toBe("Usuario ou senha invalidos.");
+      expect(app.getContext().toastErrorMessage).toBeNull();
+    });
+  });
+
+  it("classifies search filter errors as non-blocking toast feedback", async () => {
+    mocks.seed({
+      conversations: [conversation("c-1", 1)],
+      threadByConversation: { "c-1": thread("c-1", ["Mensagem inicial"]) },
+      dossierByConversation: { "c-1": dossier("c-1") },
+    });
+
+    mocks.backendClient.subscribeToConversations.mockImplementationOnce(async () => {
+      throw new hoisted.MockBackendApiClientError("search filter is too long.", "BAD_REQUEST", 400);
+    });
+
+    const app = renderProvider();
+    await act(async () => {
+      await app.getContext().login("ana.lima", "Ana@123456");
+    });
+
+    await waitFor(() => {
+      expect(app.getContext().toastErrorMessage).toBe("O filtro de busca esta muito longo.");
+      expect(app.getContext().blockingErrorMessage).toBeNull();
+    });
+  });
+
+  it("does not show toast when dossier is missing during automatic load", async () => {
+    mocks.seed({
+      conversations: [conversation("c-1", 1)],
+      threadByConversation: { "c-1": thread("c-1", ["Mensagem inicial"]) },
+      dossierByConversation: {},
+    });
+
+    const app = renderProvider();
+    await act(async () => {
+      await app.getContext().login("ana.lima", "Ana@123456");
+    });
+
+    await waitFor(() => {
+      expect(mocks.backendClient.exportDossier).toHaveBeenCalledWith("c-1");
+      expect(app.getContext().dossier).toBeNull();
+      expect(app.getContext().toastErrorMessage).toBeNull();
+      expect(app.getContext().blockingErrorMessage).toBeNull();
+    });
   });
 });

@@ -1,9 +1,12 @@
-import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   BackendApiClientError,
+  classifyErrorFeedback,
+  shouldSuppressErrorFeedback,
   type ConversationInboxItemDTO,
   type ConversationThreadPayloadDTO,
   type DossierExportDTO,
+  type ErrorFeedbackOperation,
   type TenantWorkspaceSummaryDTO,
   type TriageResult,
 } from "utils";
@@ -24,7 +27,8 @@ type OperatorAppContextValue = {
   loadingThread: boolean;
   loadingDossier: boolean;
   loadingAction: boolean;
-  errorMessage: string | null;
+  blockingErrorMessage: string | null;
+  toastErrorMessage: string | null;
   isAuthenticated: boolean;
   setStatusFilter: (status: InboxFilter) => void;
   setSearch: (value: string) => void;
@@ -56,7 +60,9 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   const [loadingThread, setLoadingThread] = useState(false);
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [blockingErrorMessage, setBlockingErrorMessage] = useState<string | null>(null);
+  const [toastErrorMessage, setToastErrorMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAuthenticated = workspace !== null;
 
@@ -83,18 +89,71 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     setSelectedConversationId(null);
   }, []);
 
-  const toReadableError = useCallback(
-    (error: unknown, fallback: string) => {
-      if (error instanceof BackendApiClientError) {
-        if (error.code === "UNAUTHENTICATED") {
-          resetState();
-        }
-        return error.message;
+  const clearError = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setBlockingErrorMessage(null);
+    setToastErrorMessage(null);
+  }, []);
+
+  const publishFeedback = useCallback(
+    (message: string, blocking: boolean) => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
       }
-      return fallback;
+
+      if (blocking) {
+        setToastErrorMessage(null);
+        setBlockingErrorMessage(message);
+        return;
+      }
+
+      setBlockingErrorMessage(null);
+      setToastErrorMessage(message);
+      toastTimerRef.current = setTimeout(() => {
+        setToastErrorMessage(null);
+        toastTimerRef.current = null;
+      }, 4500);
     },
-    [resetState],
+    [],
   );
+
+  const reportError = useCallback(
+    (error: unknown, fallbackMessage: string, operation: ErrorFeedbackOperation) => {
+      const code = error instanceof BackendApiClientError ? error.code : undefined;
+      const message = error instanceof BackendApiClientError ? error.message : undefined;
+      if (shouldSuppressErrorFeedback({ code, message, operation })) {
+        if (operation === "loadDossier") {
+          setDossier(null);
+        }
+        return;
+      }
+
+      if (code === "UNAUTHENTICATED") {
+        resetState();
+      }
+
+      const feedback = classifyErrorFeedback({
+        code,
+        message,
+        fallbackMessage,
+        operation,
+      });
+      publishFeedback(feedback.message, feedback.blocking);
+    },
+    [publishFeedback, resetState],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadWorkspace = useCallback(async () => {
     const data = await backendClient.getWorkspace();
@@ -125,11 +184,11 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       setConversations(filteredRows);
       reconcileSelectedConversation(filteredRows);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
+      reportError(error, "Falha ao carregar conversas.", "loadConversations");
     } finally {
       setLoadingConversations(false);
     }
-  }, [applyInboxFilter, reconcileSelectedConversation, search, statusQueryParam, toReadableError]);
+  }, [applyInboxFilter, reconcileSelectedConversation, reportError, search, statusQueryParam]);
 
   const loadThread = useCallback(
     async (conversationId: string, markRead: boolean) => {
@@ -141,27 +200,28 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
         const payload = await backendClient.getConversationThread(conversationId);
         setThread(payload);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar mensagens."));
+        reportError(error, "Falha ao carregar mensagens.", "loadThread");
       } finally {
         setLoadingThread(false);
       }
     },
-    [toReadableError],
+    [reportError],
   );
 
   const loadDossier = useCallback(
     async (conversationId: string) => {
       setLoadingDossier(true);
+      setDossier(null);
       try {
         const payload = await backendClient.exportDossier(conversationId);
         setDossier(payload);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar dossie."));
+        reportError(error, "Falha ao carregar dossie.", "loadDossier");
       } finally {
         setLoadingDossier(false);
       }
     },
-    [toReadableError],
+    [reportError],
   );
 
   useEffect(() => {
@@ -189,7 +249,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (cancelled) return;
         setLoadingConversations(false);
-        setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
+        reportError(error, "Falha ao carregar conversas.", "loadConversations");
       }
     })();
 
@@ -197,7 +257,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [applyInboxFilter, isAuthenticated, reconcileSelectedConversation, search, statusQueryParam, toReadableError]);
+  }, [applyInboxFilter, isAuthenticated, reconcileSelectedConversation, reportError, search, statusQueryParam]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
@@ -221,7 +281,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (cancelled) return;
         setLoadingThread(false);
-        setErrorMessage(toReadableError(error, "Falha ao carregar mensagens."));
+        reportError(error, "Falha ao carregar mensagens.", "loadThread");
       }
     })();
 
@@ -231,22 +291,22 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
+  }, [isAuthenticated, loadDossier, reportError, selectedConversationId]);
 
   const login = useCallback(
     async (username: string, password: string) => {
       setLoadingAuth(true);
-      setErrorMessage(null);
+      clearError();
       try {
         await backendClient.login(username, password);
         await loadWorkspace();
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha no login."));
+        reportError(error, "Falha no login.", "login");
       } finally {
         setLoadingAuth(false);
       }
     },
-    [loadWorkspace, toReadableError],
+    [clearError, loadWorkspace, reportError],
   );
 
   const logout = useCallback(async () => {
@@ -267,81 +327,81 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     async (body: string) => {
       if (!selectedConversationId) return;
       setLoadingAction(true);
-      setErrorMessage(null);
+      clearError();
       try {
         await backendClient.sendMessage(selectedConversationId, body);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
+        reportError(error, "Falha ao enviar mensagem.", "sendMessage");
       } finally {
         setLoadingAction(false);
       }
     },
-    [selectedConversationId, toReadableError],
+    [clearError, reportError, selectedConversationId],
   );
 
   const takeHandoff = useCallback(async () => {
     if (!selectedConversationId) return;
     setLoadingAction(true);
-    setErrorMessage(null);
+    clearError();
     try {
       await backendClient.takeHandoff(selectedConversationId);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
+      reportError(error, "Falha ao assumir conversa.", "takeHandoff");
     } finally {
       setLoadingAction(false);
     }
-  }, [selectedConversationId, toReadableError]);
+  }, [clearError, reportError, selectedConversationId]);
 
   const closeConversation = useCallback(
     async (reason: string) => {
       if (!selectedConversationId) return;
       setLoadingAction(true);
-      setErrorMessage(null);
+      clearError();
       try {
         await backendClient.closeConversation(selectedConversationId, reason);
         await loadDossier(selectedConversationId);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao encerrar conversa."));
+        reportError(error, "Falha ao encerrar conversa.", "closeConversation");
       } finally {
         setLoadingAction(false);
       }
     },
-    [loadDossier, selectedConversationId, toReadableError],
+    [clearError, loadDossier, reportError, selectedConversationId],
   );
 
   const setConversationTriageResult = useCallback(
     async (triageResult: TriageResult) => {
       if (!selectedConversationId) return;
       setLoadingAction(true);
-      setErrorMessage(null);
+      clearError();
       try {
         await backendClient.setConversationTriageResult(selectedConversationId, triageResult);
         await loadConversations();
         await loadThread(selectedConversationId, false);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao atualizar resultado da triagem."));
+        reportError(error, "Falha ao atualizar resultado da triagem.", "setTriageResult");
       } finally {
         setLoadingAction(false);
       }
     },
-    [loadConversations, loadThread, selectedConversationId, toReadableError],
+    [clearError, loadConversations, loadThread, reportError, selectedConversationId],
   );
 
   const exportDossier = useCallback(async () => {
     if (!selectedConversationId) return null;
     setLoadingAction(true);
-    setErrorMessage(null);
+    clearError();
     try {
       const payload = await backendClient.exportDossier(selectedConversationId);
       setDossier(payload);
       return payload;
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie."));
+      reportError(error, "Falha ao exportar dossie.", "exportDossier");
       return null;
     } finally {
       setLoadingAction(false);
     }
-  }, [selectedConversationId, toReadableError]);
+  }, [clearError, reportError, selectedConversationId]);
 
   const refresh = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -365,11 +425,12 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       loadingThread,
       loadingDossier,
       loadingAction,
-      errorMessage,
+      blockingErrorMessage,
+      toastErrorMessage,
       isAuthenticated,
       setStatusFilter,
       setSearch,
-      clearError: () => setErrorMessage(null),
+      clearError,
       login,
       logout,
       selectConversation,
@@ -393,8 +454,10 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       loadingThread,
       loadingDossier,
       loadingAction,
-      errorMessage,
+      blockingErrorMessage,
+      toastErrorMessage,
       isAuthenticated,
+      clearError,
       login,
       logout,
       selectConversation,
@@ -413,7 +476,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
 export function useOperatorApp() {
   const context = useContext(OperatorAppContext);
   if (!context) {
-    throw new Error("useOperatorApp must be used inside OperatorAppProvider");
+    throw new Error("useOperatorApp must be used inside OperatorAppProvider.");
   }
 
   return context;

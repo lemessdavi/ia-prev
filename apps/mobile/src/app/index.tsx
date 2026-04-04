@@ -24,7 +24,6 @@ export default function Index() {
     search,
     setSearch,
     loadingConversations,
-    errorMessage,
     selectConversation,
     logout,
   } = useOperatorApp();
@@ -119,11 +118,6 @@ export default function Index() {
         </View>
       )}
 
-      {errorMessage ? (
-        <View style={{ padding: 16 }}>
-          <Text style={{ color: "#b91c1c" }}>{errorMessage}</Text>
-        </View>
-      ) : null}
     </SafeAreaView>
   );
 }

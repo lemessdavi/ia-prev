@@ -7,7 +7,7 @@ import { Button } from "ui";
 import { useOperatorApp } from "@/context/operatorAppContext";
 
 export default function LoginScreen() {
-  const { isAuthenticated, login, loadingAuth, errorMessage, clearError } = useOperatorApp();
+  const { isAuthenticated, login, loadingAuth, clearError } = useOperatorApp();
   const [username, setUsername] = useState("ana.lima");
   const [password, setPassword] = useState("Ana@123456");
 
@@ -73,7 +73,6 @@ export default function LoginScreen() {
         </View>
         <Button title="Entrar" onPress={() => void login(username, password)} disabled={loadingAuth} />
         {loadingAuth ? <ActivityIndicator color={tokens.colors.primary} /> : null}
-        {errorMessage ? <Text style={{ color: "#b91c1c" }}>{errorMessage}</Text> : null}
       </View>
     </SafeAreaView>
   );

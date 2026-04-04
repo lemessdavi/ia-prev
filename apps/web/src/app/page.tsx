@@ -6,12 +6,15 @@ import { tokens } from "config";
 import { useQuery } from "convex/react";
 import {
   BackendApiClientError,
+  classifyErrorFeedback,
   createBackendApiClient,
   formatConversationStatusLabel,
   resolveThreadMessageOrigin,
+  shouldSuppressErrorFeedback,
   shouldRenderMessageOnRight,
   type ConversationStatus,
   type DossierExportDTO,
+  type ErrorFeedbackOperation,
   type TenantWorkspaceSummaryDTO,
   type TriageResult,
 } from "utils";
@@ -44,6 +47,7 @@ const statusOptions: Array<{ label: string; value: InboxFilter }> = [
 ];
 
 const CHAT_BOTTOM_THRESHOLD_PX = 72;
+const MAX_INBOX_SEARCH_LENGTH = 120;
 
 type MobilePanel = "inbox" | "chat" | "dossier";
 
@@ -68,12 +72,14 @@ export default function Home() {
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [blockingErrorMessage, setBlockingErrorMessage] = useState<string | null>(null);
+  const [toastErrorMessage, setToastErrorMessage] = useState<string | null>(null);
   const [retryMessageBody, setRetryMessageBody] = useState<string | null>(null);
   const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
   const [hasUnreadMessagesOutOfView, setHasUnreadMessagesOutOfView] = useState(false);
 
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isChatPinnedToBottomRef = useRef(true);
   const previousThreadSnapshotRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
     conversationId: null,
@@ -131,18 +137,68 @@ export default function Home() {
     setMobilePanel("inbox");
   }, []);
 
-  const toReadableError = useCallback(
-    (error: unknown, fallback: string) => {
-      if (error instanceof BackendApiClientError) {
-        if (error.code === "UNAUTHENTICATED") {
-          clearSession();
+  const clearErrorFeedback = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setBlockingErrorMessage(null);
+    setToastErrorMessage(null);
+  }, []);
+
+  const publishErrorFeedback = useCallback((message: string, blocking: boolean) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+
+    if (blocking) {
+      setToastErrorMessage(null);
+      setBlockingErrorMessage(message);
+      return;
+    }
+
+    setBlockingErrorMessage(null);
+    setToastErrorMessage(message);
+    toastTimerRef.current = setTimeout(() => {
+      setToastErrorMessage(null);
+      toastTimerRef.current = null;
+    }, 4500);
+  }, []);
+
+  const reportError = useCallback(
+    (error: unknown, fallbackMessage: string, operation: ErrorFeedbackOperation) => {
+      const code = error instanceof BackendApiClientError ? error.code : undefined;
+      const message = error instanceof BackendApiClientError ? error.message : undefined;
+      if (shouldSuppressErrorFeedback({ code, message, operation })) {
+        if (operation === "loadDossier") {
+          setDossier(null);
         }
-        return error.message;
+        return;
       }
-      return fallback;
+
+      if (code === "UNAUTHENTICATED") {
+        clearSession();
+      }
+
+      const feedback = classifyErrorFeedback({
+        code,
+        message,
+        fallbackMessage,
+        operation,
+      });
+      publishErrorFeedback(feedback.message, feedback.blocking);
     },
-    [clearSession],
+    [clearSession, publishErrorFeedback],
   );
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadWorkspace = useCallback(async () => {
     const data = await api.getWorkspace();
@@ -151,16 +207,17 @@ export default function Home() {
   const loadDossier = useCallback(
     async (conversationId: string) => {
       setLoadingDossier(true);
+      setDossier(null);
       try {
         const data = await api.exportDossier(conversationId);
         setDossier(data);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar dossie."));
+        reportError(error, "Falha ao carregar dossie.", "loadDossier");
       } finally {
         setLoadingDossier(false);
       }
     },
-    [toReadableError],
+    [reportError],
   );
 
   const isNearBottom = useCallback((element: HTMLDivElement) => {
@@ -200,9 +257,16 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
+    const timer = window.setTimeout(() => {
+      const normalizedSearch = searchInput.trim();
+      if (normalizedSearch.length > MAX_INBOX_SEARCH_LENGTH) {
+        reportError(new BackendApiClientError("search filter is too long.", "BAD_REQUEST", 400), "Falha ao carregar conversas.", "loadConversations");
+        return;
+      }
+      setSearch(normalizedSearch);
+    }, 250);
     return () => window.clearTimeout(timer);
-  }, [searchInput]);
+  }, [reportError, searchInput]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -211,16 +275,16 @@ export default function Home() {
 
     api.setSessionToken(existingToken);
     setSessionToken(existingToken);
-    setErrorMessage(null);
+    clearErrorFeedback();
     void (async () => {
       try {
         await loadWorkspace();
       } catch (error) {
         clearSession();
-        setErrorMessage(toReadableError(error, "Nao foi possivel restaurar a sessao."));
+        reportError(error, "Nao foi possivel restaurar a sessao.", "restoreSession");
       }
     })();
-  }, [clearSession, loadWorkspace, toReadableError]);
+  }, [clearErrorFeedback, clearSession, loadWorkspace, reportError]);
 
   useEffect(() => {
     if (!isAuthenticated || !conversationsQuery) return;
@@ -239,12 +303,12 @@ export default function Home() {
       return;
     }
 
-    setErrorMessage(null);
+    clearErrorFeedback();
     void api.markConversationAsRead(selectedConversationId).catch((error: unknown) => {
-      setErrorMessage(toReadableError(error, "Falha ao marcar conversa como lida."));
+      reportError(error, "Falha ao marcar conversa como lida.", "markConversationAsRead");
     });
     void loadDossier(selectedConversationId);
-  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
+  }, [clearErrorFeedback, isAuthenticated, loadDossier, reportError, selectedConversationId]);
 
   useEffect(() => {
     setRetryMessageBody(null);
@@ -314,7 +378,7 @@ export default function Home() {
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthLoading(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
 
     try {
       const response = await api.login(username, password);
@@ -324,7 +388,7 @@ export default function Home() {
       setSessionToken(response.sessionToken);
       await loadWorkspace();
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha no login."));
+      reportError(error, "Falha no login.", "login");
     } finally {
       setAuthLoading(false);
     }
@@ -346,13 +410,13 @@ export default function Home() {
 
     const outboundBody = messageDraft.trim();
     setSendingMessage(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       await api.sendMessage(selectedConversationId, outboundBody);
       setMessageDraft("");
       setRetryMessageBody(null);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
+      reportError(error, "Falha ao enviar mensagem.", "sendMessage");
       setRetryMessageBody(outboundBody);
     } finally {
       setSendingMessage(false);
@@ -363,13 +427,13 @@ export default function Home() {
     if (!selectedConversationId || !retryMessageBody) return;
 
     setSendingMessage(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       await api.sendMessage(selectedConversationId, retryMessageBody);
       setMessageDraft("");
       setRetryMessageBody(null);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao reenviar mensagem."));
+      reportError(error, "Falha ao reenviar mensagem.", "retryMessageSend");
     } finally {
       setSendingMessage(false);
     }
@@ -378,11 +442,11 @@ export default function Home() {
   async function handleTakeHandoff() {
     if (!selectedConversationId) return;
     setPerformingAction(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       await api.takeHandoff(selectedConversationId);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
+      reportError(error, "Falha ao assumir conversa.", "takeHandoff");
     } finally {
       setPerformingAction(false);
     }
@@ -391,11 +455,11 @@ export default function Home() {
   async function handleSetConversationTriageResult(result: TriageResult) {
     if (!selectedConversationId) return;
     setPerformingAction(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       await api.setConversationTriageResult(selectedConversationId, result);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao atualizar resultado da triagem."));
+      reportError(error, "Falha ao atualizar resultado da triagem.", "setTriageResult");
     } finally {
       setPerformingAction(false);
     }
@@ -404,18 +468,18 @@ export default function Home() {
   async function handleCloseConversation() {
     if (!selectedConversationId) return;
     if (!closureReason.trim()) {
-      setErrorMessage("Informe o motivo do encerramento.");
+      reportError(null, "Informe o motivo do encerramento.", "closeConversation");
       return;
     }
 
     setPerformingAction(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       await api.closeConversation(selectedConversationId, closureReason.trim());
       setClosureReason("");
       await loadDossier(selectedConversationId);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao encerrar caso."));
+      reportError(error, "Falha ao encerrar caso.", "closeConversation");
     } finally {
       setPerformingAction(false);
     }
@@ -424,17 +488,45 @@ export default function Home() {
   async function handleExportDossier() {
     if (!selectedConversationId) return;
     setPerformingAction(true);
-    setErrorMessage(null);
+    clearErrorFeedback();
     try {
       const payload = await api.exportDossier(selectedConversationId);
       setDossier(payload);
       downloadJson(`dossie-${selectedConversationId}.json`, payload);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie."));
+      reportError(error, "Falha ao exportar dossie.", "exportDossier");
     } finally {
       setPerformingAction(false);
     }
   }
+
+  const renderErrorFeedback = () => (
+    <>
+      {toastErrorMessage ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4" data-testid="global-error-toast">
+          <p className="w-full max-w-2xl rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">{toastErrorMessage}</p>
+        </div>
+      ) : null}
+      {blockingErrorMessage ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" data-testid="global-error-modal" role="dialog" aria-modal="true">
+          <section className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-semibold">Atencao</h2>
+            <p className="mt-3 text-sm text-zinc-700" data-testid="global-error-modal-message">
+              {blockingErrorMessage}
+            </p>
+            <button
+              type="button"
+              className="mt-4 w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+              data-testid="global-error-modal-close"
+              onClick={clearErrorFeedback}
+            >
+              Fechar
+            </button>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
 
   if (!convexUrl) {
     return (
@@ -446,6 +538,7 @@ export default function Home() {
             Defina <code>NEXT_PUBLIC_CONVEX_URL</code> para conectar o frontend ao backend Convex.
           </p>
         </section>
+        {renderErrorFeedback()}
       </main>
     );
   }
@@ -506,13 +599,9 @@ export default function Home() {
                 {authLoading ? "Entrando..." : "Acessar painel"}
               </button>
             </form>
-            {errorMessage ? (
-              <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="global-error-banner">
-                {errorMessage}
-              </p>
-            ) : null}
           </section>
         </div>
+        {renderErrorFeedback()}
       </main>
     );
   }
@@ -565,12 +654,6 @@ export default function Home() {
             </button>
           </div>
         </header>
-
-        {errorMessage ? (
-          <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 md:px-6" data-testid="global-error-banner">
-            {errorMessage}
-          </p>
-        ) : null}
 
         <div className="min-h-0 flex-1">
           <div className="grid h-full lg:grid-cols-12">
@@ -878,6 +961,7 @@ export default function Home() {
           </div>
         </div>
       </div>
+      {renderErrorFeedback()}
     </main>
   );
 }

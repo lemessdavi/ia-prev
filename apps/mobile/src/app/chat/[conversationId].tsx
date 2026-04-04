@@ -25,7 +25,6 @@ export default function ChatScreen() {
     setConversationTriageResult,
     loadingThread,
     loadingAction,
-    errorMessage,
     selectConversation,
   } = useOperatorApp();
   const [draft, setDraft] = useState("");
@@ -177,7 +176,6 @@ export default function ChatScreen() {
         >
           <Text style={{ textAlign: "center", color: "#fff", fontWeight: "600" }}>Enviar</Text>
         </Pressable>
-        {errorMessage ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{errorMessage}</Text> : null}
       </View>
       <Modal visible={triageSheetOpen} transparent animationType="slide" onRequestClose={() => setTriageSheetOpen(false)}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
