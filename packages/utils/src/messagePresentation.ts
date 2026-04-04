@@ -1,3 +1,5 @@
+import type { ConversationStatus } from "./backendApiTypes";
+
 export type ThreadMessageOrigin = "operator" | "assistant" | "client";
 
 const ASSISTANT_SENDER_PREFIXES = ["assistant", "ai_"] as const;
@@ -16,4 +18,19 @@ export function resolveThreadMessageOrigin(senderId: string, operatorUserId: str
 
 export function shouldRenderMessageOnRight(senderId: string, operatorUserId: string): boolean {
   return resolveThreadMessageOrigin(senderId, operatorUserId) !== "client";
+}
+
+export function formatConversationStatusLabel(status: ConversationStatus): string {
+  switch (status) {
+    case "EM_TRIAGEM":
+      return "🤖 Em triagem";
+    case "PENDENTE_HUMANO":
+      return "Pendente humano";
+    case "EM_ATENDIMENTO_HUMANO":
+      return "🧑 Em atendimento";
+    case "FECHADO":
+      return "Finalizado";
+    default:
+      return status;
+  }
 }

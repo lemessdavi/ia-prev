@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isAssistantSenderId, resolveThreadMessageOrigin, shouldRenderMessageOnRight } from "../src/messagePresentation";
+import {
+  formatConversationStatusLabel,
+  isAssistantSenderId,
+  resolveThreadMessageOrigin,
+  shouldRenderMessageOnRight,
+} from "../src/messagePresentation";
 
 const OPERATOR_ID = "usr_ana";
 
@@ -22,4 +27,11 @@ test("define alinhamento da mensagem: operador e IA a direita", () => {
   assert.equal(shouldRenderMessageOnRight("usr_ana", OPERATOR_ID), true);
   assert.equal(shouldRenderMessageOnRight("assistant_whatsapp", OPERATOR_ID), true);
   assert.equal(shouldRenderMessageOnRight("usr_caio", OPERATOR_ID), false);
+});
+
+test("formata labels de status com emoji para triagem e atendimento", () => {
+  assert.equal(formatConversationStatusLabel("EM_TRIAGEM"), "🤖 Em triagem");
+  assert.equal(formatConversationStatusLabel("EM_ATENDIMENTO_HUMANO"), "🧑 Em atendimento");
+  assert.equal(formatConversationStatusLabel("PENDENTE_HUMANO"), "Pendente humano");
+  assert.equal(formatConversationStatusLabel("FECHADO"), "Finalizado");
 });

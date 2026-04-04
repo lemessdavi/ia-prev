@@ -7,6 +7,7 @@ import { useQuery } from "convex/react";
 import {
   BackendApiClientError,
   createBackendApiClient,
+  formatConversationStatusLabel,
   resolveThreadMessageOrigin,
   shouldRenderMessageOnRight,
   type ConversationStatus,
@@ -635,7 +636,7 @@ export default function Home() {
                           data-testid={`conversation-status-${conversation.conversationId}`}
                           style={statusStyles[conversation.conversationStatus]}
                         >
-                          {toStatusLabel(conversation.conversationStatus)}
+                          {formatConversationStatusLabel(conversation.conversationStatus)}
                         </span>
                         {conversation.unreadCount > 0 ? (
                           <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-xs text-white">{conversation.unreadCount}</span>
@@ -797,7 +798,7 @@ export default function Home() {
                   <h2 className="text-2xl font-semibold">Dossie do caso</h2>
                   {thread ? (
                     <span className="rounded-md px-2 py-1 text-xs font-medium" data-testid="dossier-status-badge" style={statusStyles[thread.conversationStatus]}>
-                      {toStatusLabel(thread.conversationStatus)}
+                      {formatConversationStatusLabel(thread.conversationStatus)}
                     </span>
                   ) : null}
                 </div>
@@ -882,21 +883,6 @@ export default function Home() {
       </div>
     </main>
   );
-}
-
-function toStatusLabel(status: ConversationStatus): string {
-  switch (status) {
-    case "EM_TRIAGEM":
-      return "Em triagem";
-    case "PENDENTE_HUMANO":
-      return "Pendente humano";
-    case "EM_ATENDIMENTO_HUMANO":
-      return "Em atendimento";
-    case "FECHADO":
-      return "Finalizado";
-    default:
-      return status;
-  }
 }
 
 function toTriageLabel(result: string): string {
