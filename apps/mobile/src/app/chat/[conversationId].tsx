@@ -38,9 +38,17 @@ export default function ChatScreen() {
   const [triageSheetOpen, setTriageSheetOpen] = useState(false);
   const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
   const chatScrollViewRef = useRef<ScrollView>(null);
+  const latestContentHeightRef = useRef(0);
 
   const scrollChatToBottom = useCallback((animated: boolean) => {
-    chatScrollViewRef.current?.scrollToEnd({ animated });
+    const scrollView = chatScrollViewRef.current;
+    if (!scrollView) return;
+
+    scrollView.scrollToEnd?.({ animated });
+    scrollView.scrollTo?.({
+      y: Math.max(latestContentHeightRef.current, CHAT_BOTTOM_THRESHOLD_PX),
+      animated,
+    });
   }, []);
 
   const isNearBottom = useCallback((nativeEvent: NativeScrollEvent) => {
@@ -203,7 +211,8 @@ export default function ChatScreen() {
           ref={chatScrollViewRef}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           onScroll={handleChatScroll}
-          onContentSizeChange={() => {
+          onContentSizeChange={(_, contentHeight) => {
+            latestContentHeightRef.current = contentHeight;
             if (isChatPinnedToBottom) {
               scrollChatToBottom(false);
             }

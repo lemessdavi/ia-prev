@@ -9,6 +9,7 @@ const selectConversationMock = vi.fn();
 const setConversationTriageResultMock = vi.fn();
 const useOperatorAppMock = vi.fn();
 const scrollToEndMock = vi.fn();
+const scrollToMock = vi.fn();
 let latestScrollHandler: ((event: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => void) | null =
   null;
 
@@ -106,7 +107,7 @@ vi.mock("react-native", () => {
         onScroll?: (event: {
           nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } };
         }) => void;
-        onContentSizeChange?: () => void;
+        onContentSizeChange?: (contentWidth: number, contentHeight: number) => void;
         contentContainerStyle?: Record<string, unknown>;
         scrollEventThrottle?: number;
         testID?: string;
@@ -116,9 +117,10 @@ vi.mock("react-native", () => {
       latestScrollHandler = onScroll ?? null;
       React.useImperativeHandle(ref, () => ({
         scrollToEnd: scrollToEndMock,
+        scrollTo: scrollToMock,
       }));
       React.useEffect(() => {
-        onContentSizeChange?.();
+        onContentSizeChange?.(320, 1_000);
       }, [onContentSizeChange]);
       return (
         <div {...props} {...(typeof testID === "string" ? { "data-testid": testID } : {})} style={contentContainerStyle}>
@@ -156,6 +158,7 @@ describe("Chat route", () => {
     setConversationTriageResultMock.mockReset();
     useOperatorAppMock.mockReset();
     scrollToEndMock.mockReset();
+    scrollToMock.mockReset();
     latestScrollHandler = null;
     selectConversationMock.mockResolvedValue(undefined);
     setConversationTriageResultMock.mockResolvedValue(undefined);
@@ -276,5 +279,28 @@ describe("Chat route", () => {
       expect(scrollToEndMock.mock.calls.length).toBeGreaterThan(scrollCallsBeforeJump);
     });
     expect(screen.queryByTestId("chat-scroll-to-latest-button")).toBeNull();
+  });
+
+  it("uses native scrollTo fallback when jumping to latest messages", async () => {
+    mockAuthenticatedContext();
+
+    const screen = render(<ChatScreen />);
+    expect(latestScrollHandler).not.toBeNull();
+
+    await act(async () => {
+      latestScrollHandler?.({
+        nativeEvent: {
+          contentOffset: { y: 0 },
+          layoutMeasurement: { height: 300 },
+          contentSize: { height: 1_000 },
+        },
+      });
+    });
+
+    fireEvent.click(screen.getByTestId("chat-scroll-to-latest-button"));
+
+    await waitFor(() => {
+      expect(scrollToMock).toHaveBeenCalled();
+    });
   });
 });
