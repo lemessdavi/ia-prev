@@ -5,6 +5,7 @@ Suite E2E baseada no documento:
 
 Cobertura:
 - Login + sessao
+- Login sem credenciais pre-preenchidas na UI
 - Inbox (busca/filtro)
 - Thread + envio de mensagem
 - Handoff

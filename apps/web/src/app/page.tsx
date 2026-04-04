@@ -60,8 +60,8 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
-  const [username, setUsername] = useState("ana.lima");
-  const [password, setPassword] = useState("Ana@123456");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
   const [closureReason, setClosureReason] = useState("");
 
