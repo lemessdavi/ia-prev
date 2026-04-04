@@ -1,7 +1,7 @@
 /* eslint-disable react/display-name */
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import TabsLayout from "./_layout";
+import TabsLayout from "@/app/(tabs)/_layout";
 
 const useOperatorAppMock = vi.fn();
 const redirectSpy = vi.fn();
