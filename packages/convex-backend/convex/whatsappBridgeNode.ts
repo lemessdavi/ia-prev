@@ -122,12 +122,12 @@ async function generateAssistantReply(input: { inboundBody?: string; messageType
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`OpenAI request failed with status ${response.status}.`);
+      throw new Error(`A requisicao para a OpenAI falhou com status ${response.status}.`);
     }
 
     const reply = extractOpenAiText(data);
     if (!reply) {
-      throw new Error("OpenAI response did not contain output text.");
+      throw new Error("A resposta da OpenAI nao trouxe texto de saida.");
     }
 
     return {
@@ -150,7 +150,7 @@ async function sendWhatsAppText(input: { phoneNumberId: string; recipientWaId: s
     return {
       sent: false,
       statusCode: 503,
-      error: "WHATSAPP_CLOUD_ACCESS_TOKEN is not configured.",
+      error: "WHATSAPP_CLOUD_ACCESS_TOKEN nao esta configurado.",
       externalMessageId: undefined,
     };
   }
@@ -182,7 +182,7 @@ async function sendWhatsAppText(input: { phoneNumberId: string; recipientWaId: s
       return {
         sent: false,
         statusCode: response.status,
-        error: asNonEmptyString(data?.error?.message) ?? "WhatsApp Cloud API returned an error.",
+        error: asNonEmptyString(data?.error?.message) ?? "A API do WhatsApp Cloud retornou um erro.",
         externalMessageId,
       };
     }
@@ -197,7 +197,7 @@ async function sendWhatsAppText(input: { phoneNumberId: string; recipientWaId: s
     return {
       sent: false,
       statusCode: 500,
-      error: "WhatsApp Cloud request failed.",
+      error: "A requisicao para o WhatsApp Cloud falhou.",
       externalMessageId: undefined,
     };
   }

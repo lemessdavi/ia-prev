@@ -47,7 +47,7 @@ export function getContactDossierWithEvents(input: {
   const session = requirePersistedSession({ session: input.session, store: input.store });
   const contactId = assertId(input.contactId, "contactId");
   if (!input.store.findUser(session.userId, session.tenantId)) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+    throw new BackendError("Dossie nao encontrado para este contato.", "NOT_FOUND", {
       tenantId: session.tenantId,
       contactId,
     });
@@ -55,7 +55,7 @@ export function getContactDossierWithEvents(input: {
 
   const dossier = input.store.findDossier(contactId, session.tenantId);
   if (!dossier) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+    throw new BackendError("Dossie nao encontrado para este contato.", "NOT_FOUND", {
       contactId,
       tenantId: session.tenantId,
     });
@@ -65,7 +65,7 @@ export function getContactDossierWithEvents(input: {
     session.userId === contactId ||
     input.store.hasConversationWithContact(session.userId, contactId, session.tenantId);
   if (!canAccess) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+    throw new BackendError("Dossie nao encontrado para este contato.", "NOT_FOUND", {
       contactId,
       tenantId: session.tenantId,
     });
@@ -92,7 +92,7 @@ export function getTenantWorkspaceSummary(input: {
   const user = input.store.findUser(session.userId, session.tenantId);
 
   if (!tenant || !wabaMapping || !aiProfile || !user) {
-    throw new BackendError("Tenant workspace is not fully configured.", "NOT_FOUND", {
+    throw new BackendError("O workspace do tenant nao esta totalmente configurado.", "NOT_FOUND", {
       tenantId: session.tenantId,
       userId: session.userId,
     });
@@ -177,7 +177,7 @@ export function getConversationThread(input: {
   const conversation = input.store.findConversation(conversationId, session.tenantId);
 
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", {
       conversationId,
       tenantId: session.tenantId,
     });
@@ -228,7 +228,7 @@ export function exportConversationDossier(input: {
   const conversationId = assertId(input.conversationId, "conversationId");
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", {
       tenantId: session.tenantId,
       conversationId,
     });
@@ -237,7 +237,7 @@ export function exportConversationDossier(input: {
   const contactId = resolveContactId(conversation.participantIds, session.userId);
   const dossier = input.store.findDossier(contactId, session.tenantId);
   if (!dossier) {
-    throw new BackendError("Dossier not found for this conversation.", "NOT_FOUND", {
+    throw new BackendError("Dossie nao encontrado para esta conversa.", "NOT_FOUND", {
       tenantId: session.tenantId,
       conversationId,
       contactId,
@@ -286,7 +286,7 @@ export function listUsers(input: {
     .map((account) => {
       const user = input.store.findUserById(account.userId);
       if (!user) {
-        throw new BackendError("User account is linked to an unknown user.", "NOT_FOUND", {
+        throw new BackendError("A conta esta vinculada a um usuario desconhecido.", "NOT_FOUND", {
           userId: account.userId,
         });
       }
@@ -324,7 +324,7 @@ export function resolveTenantByPhoneNumberId(input: {
   const phoneNumberId = assertId(input.phoneNumberId, "phoneNumberId");
   const mapping = input.store.findTenantWabaByPhoneNumberId(phoneNumberId);
   if (!mapping) {
-    throw new BackendError("WABA mapping not found for phone_number_id.", "NOT_FOUND", { phoneNumberId });
+    throw new BackendError("Mapeamento WABA nao encontrado para o phone_number_id.", "NOT_FOUND", { phoneNumberId });
   }
 
   logInfo("Tenant resolved from phone_number_id.", {
@@ -343,7 +343,7 @@ export function resolveTenantByPhoneNumberId(input: {
 function resolveContactId(participantIds: string[], currentUserId: string): string {
   const candidate = participantIds.find((id) => id !== currentUserId) ?? participantIds[0];
   if (!candidate) {
-    throw new BackendError("Conversation is missing participants.", "BAD_REQUEST");
+    throw new BackendError("A conversa esta sem participantes.", "BAD_REQUEST");
   }
   return candidate;
 }

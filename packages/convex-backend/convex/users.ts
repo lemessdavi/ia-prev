@@ -48,7 +48,7 @@ export const listUsers = query({
           .withIndex("by_user_id", (q: any) => q.eq("userId", user.userId))
           .unique();
         if (!account) {
-          throwBusinessError("NOT_FOUND", "User account is linked to an unknown user.", {
+          throwBusinessError("NOT_FOUND", "A conta esta vinculada a um usuario desconhecido.", {
             userId: user.userId,
           });
         }
@@ -113,16 +113,16 @@ export const createTenantUserWithHash = internalMutation({
     ]);
 
     if (!tenant) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", { tenantId });
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", { tenantId });
     }
     if (existingUser) {
-      throwBusinessError("BAD_REQUEST", "User id already exists.", { userId });
+      throwBusinessError("BAD_REQUEST", "O ID de usuario ja existe.", { userId });
     }
     if (existingUsername) {
-      throwBusinessError("BAD_REQUEST", "Username already exists.", { username });
+      throwBusinessError("BAD_REQUEST", "O nome de usuario ja existe.", { username });
     }
     if (existingEmail) {
-      throwBusinessError("BAD_REQUEST", "Email already exists for this tenant.", { tenantId, email });
+      throwBusinessError("BAD_REQUEST", "O e-mail ja existe para este tenant.", { tenantId, email });
     }
 
     await ctx.db.insert("users", {
@@ -174,7 +174,7 @@ export const setUserActive = mutation({
     const userId = assertId(args.userId, "userId");
     const [user, account] = await Promise.all([findUserByUserId(ctx.db, userId), findUserAccountByUserId(ctx.db, userId)]);
     if (!user || !account) {
-      throwBusinessError("NOT_FOUND", "User not found.", { userId });
+      throwBusinessError("NOT_FOUND", "Usuario nao encontrado.", { userId });
     }
 
     await ctx.db.patch(account._id, {
@@ -207,7 +207,7 @@ export const resetUserPasswordWithHash = internalMutation({
     const userId = assertId(args.userId, "userId");
     const [user, account] = await Promise.all([findUserByUserId(ctx.db, userId), findUserAccountByUserId(ctx.db, userId)]);
     if (!user || !account) {
-      throwBusinessError("NOT_FOUND", "User not found.", { userId });
+      throwBusinessError("NOT_FOUND", "Usuario nao encontrado.", { userId });
     }
 
     await ctx.db.patch(account._id, {

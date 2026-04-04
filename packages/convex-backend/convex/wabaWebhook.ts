@@ -436,7 +436,7 @@ export const upsertTenantWabaMapping = internalMutation({
       .unique();
 
     if (ownerByPhone && ownerByPhone.tenantId !== args.tenantId) {
-      throw businessError("PHONE_NUMBER_ALREADY_MAPPED", "phone_number_id already mapped to another tenant.", {
+      throw businessError("PHONE_NUMBER_ALREADY_MAPPED", "O phone_number_id ja esta mapeado para outro tenant.", {
         phoneNumberId: args.phoneNumberId,
         ownerTenantId: ownerByPhone.tenantId,
       });

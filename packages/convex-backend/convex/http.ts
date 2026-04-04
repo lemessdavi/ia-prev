@@ -190,7 +190,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Invalid webhook verification request.",
+          error: "Requisicao de verificacao do webhook invalida.",
           code: "BAD_REQUEST",
         },
         { status: 400 },
@@ -212,7 +212,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Webhook verification is unavailable. Configure WHATSAPP_WEBHOOK_VERIFY_TOKEN.",
+          error: "A verificacao de webhook esta indisponivel. Configure WHATSAPP_WEBHOOK_VERIFY_TOKEN.",
           code: "SERVICE_UNAVAILABLE",
         },
         { status: 503 },
@@ -230,7 +230,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Invalid webhook verify token.",
+          error: "Token de verificacao do webhook invalido.",
           code: "FORBIDDEN",
         },
         { status: 403 },
@@ -265,7 +265,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Webhook signature verification is unavailable. Configure WHATSAPP_APP_SECRET.",
+          error: "A validacao de assinatura do webhook esta indisponivel. Configure WHATSAPP_APP_SECRET.",
           code: "SERVICE_UNAVAILABLE",
         },
         { status: 503 },
@@ -285,7 +285,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Invalid webhook signature.",
+          error: "Assinatura do webhook invalida.",
           code: "UNAUTHENTICATED",
         },
         { status: 401 },
@@ -344,7 +344,7 @@ http.route({
       return Response.json(
         {
           ok: false,
-          error: "Webhook processing failed.",
+          error: "Falha no processamento do webhook.",
           code: "INTERNAL_ERROR",
         },
         { status: 500 },

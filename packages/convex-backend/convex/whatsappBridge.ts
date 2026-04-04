@@ -134,7 +134,7 @@ async function requireActiveMappingByPhoneNumberId(ctx: any, phoneNumberId: stri
     .unique();
 
   if (!mapping || !mapping.isActive) {
-    throwBusinessError("NOT_FOUND", "WABA mapping not found for phone_number_id.", {
+    throwBusinessError("NOT_FOUND", "Mapeamento WABA nao encontrado para o phone_number_id.", {
       phoneNumberId,
     });
   }
@@ -211,7 +211,7 @@ async function upsertConversation(ctx: any, input: {
     });
   } else {
     if (existingConversation.tenantId !== input.tenantId) {
-      throwBusinessError("FORBIDDEN", "Conversation does not belong to mapped tenant.", {
+      throwBusinessError("FORBIDDEN", "A conversa nao pertence ao tenant mapeado.", {
         conversationId,
         tenantId: input.tenantId,
       });
@@ -292,7 +292,7 @@ export const persistInboundFromWebhook = internalMutation({
     const contactWaId = asNonEmptyString(args.contactWaId);
 
     if (!phoneNumberId || !contactWaId) {
-      throwBusinessError("BAD_REQUEST", "phoneNumberId and contactWaId are required.");
+      throwBusinessError("BAD_REQUEST", "phoneNumberId e contactWaId sao obrigatorios.");
     }
 
     const messageType = asNonEmptyString(args.messageType) ?? "text";
@@ -382,7 +382,7 @@ export const persistOutboundMessage = internalMutation({
     const body = asNonEmptyString(args.body);
 
     if (!phoneNumberId || !conversationId || !body) {
-      throwBusinessError("BAD_REQUEST", "phoneNumberId, conversationId and body are required.");
+      throwBusinessError("BAD_REQUEST", "phoneNumberId, conversationId e body sao obrigatorios.");
     }
 
     const mapping = await requireActiveMappingByPhoneNumberId(ctx, phoneNumberId);

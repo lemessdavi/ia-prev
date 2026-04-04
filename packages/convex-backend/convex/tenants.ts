@@ -45,11 +45,11 @@ export const createTenant = mutation({
     ]);
 
     if (tenantById) {
-      throwBusinessError("BAD_REQUEST", "Tenant id already exists.", { tenantId });
+      throwBusinessError("BAD_REQUEST", "O ID do tenant ja existe.", { tenantId });
     }
 
     if (tenantBySlug) {
-      throwBusinessError("BAD_REQUEST", "Tenant slug already exists.", { slug });
+      throwBusinessError("BAD_REQUEST", "O slug do tenant ja existe.", { slug });
     }
 
     await ctx.db.insert("tenants", {
@@ -86,7 +86,7 @@ export const updateTenant = mutation({
     const tenantId = assertId(args.tenantId, "tenantId");
     const existing = await findTenantByTenantId(ctx.db, tenantId);
     if (!existing) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", { tenantId });
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", { tenantId });
     }
 
     const name = args.name !== undefined ? assertTenantName(args.name, "name") : existing.name;
@@ -98,7 +98,7 @@ export const updateTenant = mutation({
       .withIndex("by_slug", (q: any) => q.eq("slug", slug))
       .unique();
     if (tenantWithSlug && tenantWithSlug.tenantId !== tenantId) {
-      throwBusinessError("BAD_REQUEST", "Tenant slug already exists.", { slug });
+      throwBusinessError("BAD_REQUEST", "O slug do tenant ja existe.", { slug });
     }
 
     await ctx.db.patch(existing._id, { name, slug, isActive });

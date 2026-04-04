@@ -81,11 +81,11 @@ export const upsertTenantWabaAccount = mutation({
     ]);
 
     if (!tenant) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", { tenantId });
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", { tenantId });
     }
 
     if (phoneOwner && phoneOwner.tenantId !== tenantId) {
-      throwBusinessError("BAD_REQUEST", "phone_number_id already mapped to another tenant.", {
+      throwBusinessError("BAD_REQUEST", "O phone_number_id ja esta mapeado para outro tenant.", {
         phoneNumberId,
         tenantId: phoneOwner.tenantId,
       });
@@ -153,7 +153,7 @@ export const resolveTenantByPhoneNumberId = query({
       .unique();
 
     if (!mapping || !mapping.isActive) {
-      throwBusinessError("NOT_FOUND", "WABA mapping not found for phone_number_id.", { phoneNumberId });
+      throwBusinessError("NOT_FOUND", "Mapeamento WABA nao encontrado para o phone_number_id.", { phoneNumberId });
     }
 
     return {

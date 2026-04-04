@@ -53,7 +53,7 @@ async function requireConversationForParticipant(db: any, input: { tenantId: str
     .unique();
 
   if (!conversation || conversation.tenantId !== input.tenantId) {
-    throwBusinessError("NOT_FOUND", "Conversation not found.", {
+    throwBusinessError("NOT_FOUND", "Conversa nao encontrada.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
     });
@@ -67,7 +67,7 @@ async function requireConversationForParticipant(db: any, input: { tenantId: str
     .unique();
 
   if (!membership) {
-    throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+    throwBusinessError("FORBIDDEN", "Voce nao pode acessar esta conversa.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
       userId: input.userId,
@@ -84,7 +84,7 @@ async function requireTenantConversation(db: any, input: { tenantId: string; con
     .unique();
 
   if (!conversation || conversation.tenantId !== input.tenantId) {
-    throwBusinessError("NOT_FOUND", "Conversation not found.", {
+    throwBusinessError("NOT_FOUND", "Conversa nao encontrada.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
     });
@@ -96,7 +96,7 @@ async function requireTenantConversation(db: any, input: { tenantId: string; con
 function resolveContactId(participantIds: string[], currentUserId: string): string {
   const candidate = participantIds.find((id) => id !== currentUserId) ?? participantIds[0];
   if (!candidate) {
-    throwBusinessError("BAD_REQUEST", "Conversation is missing participants.", {
+    throwBusinessError("BAD_REQUEST", "A conversa esta sem participantes.", {
       currentUserId,
     });
   }
@@ -316,7 +316,7 @@ export const getTenantWorkspaceSummary = query({
     ]);
 
     if (!tenant || !wabaMapping || !activeProfile || !user || user.tenantId !== session.tenantId) {
-      throwBusinessError("NOT_FOUND", "Tenant workspace is not fully configured.", {
+      throwBusinessError("NOT_FOUND", "O workspace do tenant nao esta totalmente configurado.", {
         tenantId: session.tenantId,
         userId: session.userId,
       });
@@ -449,7 +449,7 @@ export const sendMessage = mutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -506,7 +506,7 @@ export const markConversationAsRead = mutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot update this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode atualizar esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -555,7 +555,7 @@ export const prepareConversationHandoff = internalQuery({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode acessar esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -563,7 +563,7 @@ export const prepareConversationHandoff = internalQuery({
     }
 
     if (conversation.conversationStatus === "FECHADO") {
-      throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
+      throwBusinessError("BAD_REQUEST", "A conversa ja esta encerrada.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -571,7 +571,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const contactId = resolveContactId(conversation.participantIds, session.userId);
     if (!contactId.startsWith("wa_contact_")) {
-      throwBusinessError("BAD_REQUEST", "Conversation is not linked to a WhatsApp contact.", {
+      throwBusinessError("BAD_REQUEST", "A conversa nao esta vinculada a um contato do WhatsApp.", {
         tenantId: session.tenantId,
         conversationId,
         contactId,
@@ -580,7 +580,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const recipientWaId = contactId.slice("wa_contact_".length);
     if (!recipientWaId) {
-      throwBusinessError("BAD_REQUEST", "Conversation WhatsApp contact is invalid.", {
+      throwBusinessError("BAD_REQUEST", "O contato do WhatsApp da conversa e invalido.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -594,7 +594,7 @@ export const prepareConversationHandoff = internalQuery({
     ).filter((mapping: any) => mapping.isActive);
 
     if (activeMappings.length === 0) {
-      throwBusinessError("NOT_FOUND", "No active WABA mapping found for tenant.", {
+      throwBusinessError("NOT_FOUND", "Nenhum mapeamento WABA ativo foi encontrado para o tenant.", {
         tenantId: session.tenantId,
       });
     }
@@ -606,7 +606,7 @@ export const prepareConversationHandoff = internalQuery({
       );
 
       if (matchingMappings.length !== 1) {
-        throwBusinessError("BAD_REQUEST", "Unable to resolve WABA mapping for conversation.", {
+        throwBusinessError("BAD_REQUEST", "Nao foi possivel resolver o mapeamento WABA da conversa.", {
           tenantId: session.tenantId,
           conversationId,
           mappingCount: activeMappings.length,
@@ -618,7 +618,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const operator = await findUserByUserId(ctx.db, session.userId);
     if (!operator) {
-      throwBusinessError("UNAUTHENTICATED", "Operator was not found for this session.", {
+      throwBusinessError("UNAUTHENTICATED", "Operador nao encontrado para esta sessao.", {
         userId: session.userId,
       });
     }
@@ -658,7 +658,7 @@ export const completeConversationHandoff = internalMutation({
     });
 
     if (conversation.conversationStatus === "FECHADO") {
-      throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
+      throwBusinessError("BAD_REQUEST", "A conversa ja esta encerrada.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -791,7 +791,7 @@ export const logConversationMessageWhatsAppSent = internalMutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -835,7 +835,7 @@ export const logConversationMessageWhatsAppFailure = internalMutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -983,7 +983,7 @@ export const exportConversationDossier = mutation({
       .unique();
 
     if (!dossierRow) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this conversation.", {
+      throwBusinessError("NOT_FOUND", "Dossie nao encontrado para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         contactId,
@@ -1059,7 +1059,7 @@ export const getContactDossierWithEvents = query({
 
     const requestingUser = await findUserByUserId(ctx.db, session.userId);
     if (!requestingUser || requestingUser.tenantId !== session.tenantId) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+      throwBusinessError("NOT_FOUND", "Dossie nao encontrado para este contato.", {
         tenantId: session.tenantId,
         contactId,
       });
@@ -1070,7 +1070,7 @@ export const getContactDossierWithEvents = query({
       .withIndex("by_tenant_id_and_contact_id", (q: any) => q.eq("tenantId", session.tenantId).eq("contactId", contactId))
       .unique();
     if (!dossier) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+      throwBusinessError("NOT_FOUND", "Dossie nao encontrado para este contato.", {
         tenantId: session.tenantId,
         contactId,
       });
@@ -1097,7 +1097,7 @@ export const getContactDossierWithEvents = query({
       }
 
       if (!canAccess) {
-        throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+        throwBusinessError("NOT_FOUND", "Dossie nao encontrado para este contato.", {
           tenantId: session.tenantId,
           contactId,
         });
@@ -1154,7 +1154,7 @@ export const getWorkspaceSnapshot = query({
     ]);
 
     if (!tenant) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", {
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", {
         tenantId: session.tenantId,
       });
     }

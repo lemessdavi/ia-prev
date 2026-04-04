@@ -12,7 +12,7 @@ async function requireTenantConversation(db: any, input: { tenantId: string; con
     .unique();
 
   if (!conversation || conversation.tenantId !== input.tenantId) {
-    throwBusinessError("NOT_FOUND", "Conversation not found.", {
+    throwBusinessError("NOT_FOUND", "Conversa nao encontrada.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
     });
@@ -195,7 +195,7 @@ export const evaluateConversationTriage = mutation({
     if (!existing && !args.flowType) {
       throwBusinessError(
         "BAD_REQUEST",
-        "flowType is required when triage answers were not previously initialized.",
+        "flowType e obrigatorio quando as respostas de triagem ainda nao foram inicializadas.",
         {
           tenantId: session.tenantId,
           conversationId,
@@ -205,7 +205,7 @@ export const evaluateConversationTriage = mutation({
 
     const flowType = args.flowType ?? existing?.flowType;
     if (!flowType) {
-      throwBusinessError("BAD_REQUEST", "flowType is required when triage answers were not previously initialized.", {
+      throwBusinessError("BAD_REQUEST", "flowType e obrigatorio quando as respostas de triagem ainda nao foram inicializadas.", {
         tenantId: session.tenantId,
         conversationId,
       });

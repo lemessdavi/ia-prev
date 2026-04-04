@@ -197,7 +197,7 @@ function normalizeInboundMessage(payload: unknown, fallbackNow: number): Normali
   const rawMessage = value?.messages?.[0];
 
   if (!value || !rawMessage) {
-    throw new BackendError("Webhook payload is missing metadata/messages.", "BAD_REQUEST");
+    throw new BackendError("O payload do webhook esta sem metadata/messages.", "BAD_REQUEST");
   }
 
   const phoneNumberId = assertId(value.metadata?.phone_number_id ?? "", "phone_number_id");
@@ -270,7 +270,7 @@ function normalizeInboundMessage(payload: unknown, fallbackNow: number): Normali
     };
   }
 
-  throw new BackendError("Unsupported WhatsApp message type.", "BAD_REQUEST", {
+  throw new BackendError("Tipo de mensagem do WhatsApp nao suportado.", "BAD_REQUEST", {
     messageType: rawMessage.type,
   });
 }

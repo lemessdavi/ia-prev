@@ -31,7 +31,7 @@ async function activateProfileForTenant(db: any, tenantId: string, profileId: st
   );
 
   if (!activeProfile) {
-    throwBusinessError("NOT_FOUND", "AI profile not found for this tenant.", { tenantId, profileId });
+    throwBusinessError("NOT_FOUND", "Perfil de IA nao encontrado para este tenant.", { tenantId, profileId });
   }
 
   return toAiProfile(activeProfile);
@@ -90,10 +90,10 @@ export const createAiProfile = mutation({
     ]);
 
     if (!tenant) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", { tenantId });
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", { tenantId });
     }
     if (existing) {
-      throwBusinessError("BAD_REQUEST", "AI profile id already exists.", { id: profileId });
+      throwBusinessError("BAD_REQUEST", "O ID do perfil de IA ja existe.", { id: profileId });
     }
 
     const insertedId = await ctx.db.insert("aiProfiles", {
@@ -121,7 +121,7 @@ export const createAiProfile = mutation({
 
     const inserted = await ctx.db.get(insertedId);
     if (!inserted) {
-      throwBusinessError("NOT_FOUND", "AI profile not found.", { id: profileId, tenantId });
+      throwBusinessError("NOT_FOUND", "Perfil de IA nao encontrado.", { id: profileId, tenantId });
     }
 
     return toAiProfile(inserted);
@@ -147,7 +147,7 @@ export const setActiveAiProfile = mutation({
       .unique();
 
     if (!profile || profile.tenantId !== tenantId) {
-      throwBusinessError("NOT_FOUND", "AI profile not found for this tenant.", {
+      throwBusinessError("NOT_FOUND", "Perfil de IA nao encontrado para este tenant.", {
         tenantId,
         profileId,
       });

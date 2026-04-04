@@ -23,7 +23,7 @@ export const seedDemoData = action({
   handler: async (ctx, args) => {
     const expectedSeedKey = process.env.DEMO_SEED_KEY;
     if (expectedSeedKey && args.seedKey !== expectedSeedKey) {
-      throwBusinessError("FORBIDDEN", "Invalid seed key.");
+      throwBusinessError("FORBIDDEN", "Chave de seed invalida.");
     }
 
     return await ctx.runMutation(seedFixturesInternalRef, {

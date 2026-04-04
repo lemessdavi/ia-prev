@@ -8,7 +8,7 @@ import { assertPassword, assertUsername } from "./validators";
 export function requireSession(session: Session | null | undefined): Session {
   const validRole = session?.role === "superadmin" || session?.role === "tenant_user";
   if (!session?.userId || !session?.tenantId || !validRole) {
-    const error = new BackendError("You must be authenticated to call this function.", "UNAUTHENTICATED");
+    const error = new BackendError("Voce precisa estar autenticado para executar esta funcao.", "UNAUTHENTICATED");
     logError(error);
     throw error;
   }
@@ -21,7 +21,7 @@ export function requirePersistedSession(input: {
 }): AuthenticatedSession {
   const currentSession = requireSession(input.session);
   if (!currentSession.sessionId) {
-    const error = new BackendError("You must be authenticated to call this function.", "UNAUTHENTICATED");
+    const error = new BackendError("Voce precisa estar autenticado para executar esta funcao.", "UNAUTHENTICATED");
     logError(error);
     throw error;
   }
@@ -33,7 +33,7 @@ export function requirePersistedSession(input: {
     storedSession.tenantId !== currentSession.tenantId ||
     storedSession.role !== currentSession.role
   ) {
-    const error = new BackendError("Your session is invalid or has expired.", "UNAUTHENTICATED", {
+    const error = new BackendError("Sua sessao e invalida ou expirou. Faca login novamente.", "UNAUTHENTICATED", {
       sessionId: currentSession.sessionId,
       userId: currentSession.userId,
       tenantId: currentSession.tenantId,
@@ -58,7 +58,7 @@ export function requireSuperadmin(input: {
 }): AuthenticatedSession {
   const currentSession = requirePersistedSession(input);
   if (currentSession.role !== "superadmin") {
-    const error = new BackendError("You do not have permission to access this resource.", "FORBIDDEN", {
+    const error = new BackendError("Voce nao tem permissao para acessar este recurso.", "FORBIDDEN", {
       role: currentSession.role,
       tenantId: currentSession.tenantId,
     });
@@ -74,7 +74,7 @@ export function assertTenantAccess(session: Session, tenantId: TenantId): Tenant
     return tenantId;
   }
 
-  const error = new BackendError("You do not have permission to access this tenant.", "FORBIDDEN", {
+  const error = new BackendError("Voce nao tem permissao para acessar este tenant.", "FORBIDDEN", {
     sessionTenantId: session.tenantId,
     requestedTenantId: tenantId,
     role: session.role,
@@ -95,7 +95,7 @@ export function loginWithUsernamePassword(input: {
   const user = account ? input.store.findUserById(account.userId) : undefined;
 
   if (!account || !user || !verifyPassword(password, account.passwordHash)) {
-    const error = new BackendError("Invalid username or password.", "UNAUTHENTICATED", {
+    const error = new BackendError("Usuario ou senha invalidos.", "UNAUTHENTICATED", {
       username,
     });
     logError(error);
@@ -103,7 +103,7 @@ export function loginWithUsernamePassword(input: {
   }
 
   if (!account.isActive) {
-    const error = new BackendError("This user is disabled.", "FORBIDDEN", {
+    const error = new BackendError("Este usuario esta desativado.", "FORBIDDEN", {
       username,
       userId: account.userId,
     });

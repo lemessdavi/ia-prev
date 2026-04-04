@@ -182,7 +182,7 @@ export const takeConversationHandoff = action({
         reason,
       });
 
-      throwBusinessError("BAD_REQUEST", "Failed to send handoff notification to WhatsApp.", {
+      throwBusinessError("BAD_REQUEST", "Falha ao enviar a notificacao de handoff para o WhatsApp.", {
         conversationId: prepared.conversationId,
         reason,
       });
@@ -212,7 +212,7 @@ export const sendConversationMessage = action({
 
     const normalizedBody = args.body.trim();
     if (!normalizedBody) {
-      throwBusinessError("BAD_REQUEST", "Message body must not be empty.");
+      throwBusinessError("BAD_REQUEST", "O conteudo da mensagem nao pode estar vazio.");
     }
 
     let externalMessageId: string | undefined;
@@ -235,7 +235,7 @@ export const sendConversationMessage = action({
         reason,
       });
 
-      throwBusinessError("BAD_REQUEST", "Failed to send message to WhatsApp.", {
+      throwBusinessError("BAD_REQUEST", "Falha ao enviar mensagem para o WhatsApp.", {
         conversationId: prepared.conversationId,
         reason,
       });
