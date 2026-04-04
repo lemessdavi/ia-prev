@@ -224,7 +224,7 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
     async sendMessage(conversationId, body, attachmentUrl) {
       await execute(async () => {
         const client = getConvexClient(convexUrl);
-        await client.mutation(convexApi.chat.sendMessage, {
+        await client.action(convexApi.chat.sendMessage, {
           sessionToken: requireSessionToken(),
           conversationId,
           body,

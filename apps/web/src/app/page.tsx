@@ -59,6 +59,7 @@ export default function Home() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryMessageBody, setRetryMessageBody] = useState<string | null>(null);
   const [isChatPinnedToBottom, setIsChatPinnedToBottom] = useState(true);
   const [hasUnreadMessagesOutOfView, setHasUnreadMessagesOutOfView] = useState(false);
 
@@ -243,6 +244,7 @@ export default function Home() {
   }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
 
   useEffect(() => {
+    setRetryMessageBody(null);
     if (!selectedConversationId) {
       setHasUnreadMessagesOutOfView(false);
       isChatPinnedToBottomRef.current = true;
@@ -339,13 +341,32 @@ export default function Home() {
     event.preventDefault();
     if (!selectedConversationId || !messageDraft.trim()) return;
 
+    const outboundBody = messageDraft.trim();
     setSendingMessage(true);
     setErrorMessage(null);
     try {
-      await api.sendMessage(selectedConversationId, messageDraft.trim());
+      await api.sendMessage(selectedConversationId, outboundBody);
       setMessageDraft("");
+      setRetryMessageBody(null);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao enviar mensagem."));
+      setRetryMessageBody(outboundBody);
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function handleRetryMessageSend() {
+    if (!selectedConversationId || !retryMessageBody) return;
+
+    setSendingMessage(true);
+    setErrorMessage(null);
+    try {
+      await api.sendMessage(selectedConversationId, retryMessageBody);
+      setMessageDraft("");
+      setRetryMessageBody(null);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao reenviar mensagem."));
     } finally {
       setSendingMessage(false);
     }
@@ -701,6 +722,17 @@ export default function Home() {
                     Enviar
                   </button>
                 </form>
+                {retryMessageBody ? (
+                  <button
+                    type="button"
+                    className="mt-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+                    data-testid="chat-retry-send-button"
+                    onClick={handleRetryMessageSend}
+                    disabled={!selectedConversationId || sendingMessage}
+                  >
+                    Tentar enviar novamente
+                  </button>
+                ) : null}
               </footer>
             </section>
 

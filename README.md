@@ -34,7 +34,8 @@ WhatsApp processing flow is direct and does not use external orchestration:
    - Mobile: copy `apps/mobile/.env.example` and set `EXPO_PUBLIC_CONVEX_URL`.
 3. Run Convex + apps together:
    - `pnpm dev`
-   - If `CONVEX_DEPLOYMENT`/`CONVEX_DEPLOY_KEY` are missing in non-interactive runs, Convex is skipped and web/mobile continue.
+   - The script auto-loads `CONVEX_DEPLOYMENT` from `packages/convex-backend/.env.local` (or root `.env.local`).
+   - If `CONVEX_DEPLOYMENT` is missing, Convex is skipped and web/mobile continue.
    - To force Convex dev manually in interactive mode: `pnpm convex:dev:force`
 
 Useful commands:

@@ -6,12 +6,13 @@ import schema from "../convex/schema";
 const modules = import.meta.glob("../convex/**/*.{ts,js}");
 
 const seedDemoDataRef = makeFunctionReference<"action">("seedNode:seedDemoData");
-const persistInboundFromN8nRef = makeFunctionReference<"mutation">("n8nBridge:persistInboundFromN8n");
+const persistInboundFromWebhookRef = makeFunctionReference<"mutation">("whatsappBridge:persistInboundFromWebhook");
 const loginRef = makeFunctionReference<"action">("authNode:loginWithUsernamePassword");
 const workspaceSummaryRef = makeFunctionReference<"query">("chatDomain:getTenantWorkspaceSummary");
 const listConversationsForInboxRef = makeFunctionReference<"query">("chatDomain:listConversationsForInbox");
 const getConversationThreadRef = makeFunctionReference<"query">("chatDomain:getConversationThread");
 const takeConversationHandoffRef = makeFunctionReference<"action">("chatHandoffNode:takeConversationHandoff");
+const sendConversationMessageRef = makeFunctionReference<"action">("chatHandoffNode:sendConversationMessage");
 const closeConversationWithReasonRef = makeFunctionReference<"mutation">("chatDomain:closeConversationWithReason");
 const exportConversationDossierRef = makeFunctionReference<"mutation">("chatDomain:exportConversationDossier");
 const listConversationAuditLogsRef = makeFunctionReference<"query">("testing:listConversationAuditLogs");
@@ -39,7 +40,7 @@ async function createWhatsAppConversation(
   t: Awaited<ReturnType<typeof createSeededTestContext>>,
   input: { externalMessageId: string; contactWaId: string; contactDisplayName: string; body: string },
 ) {
-  return await t.mutation(persistInboundFromN8nRef, {
+  return await t.mutation(persistInboundFromWebhookRef, {
     phoneNumberId: "waba_phone_legal_1",
     contactWaId: input.contactWaId,
     contactDisplayName: input.contactDisplayName,
@@ -258,6 +259,100 @@ describe("Convex tenant operator workspace flows", () => {
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.taken")).toBe(false);
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.taken.failed")).toBe(true);
     expect(audits.some((row: { action: string }) => row.action === "conversation.handoff.whatsapp_notification.failed")).toBe(true);
+  });
+
+  it("sends operator message to WhatsApp, persists message and writes delivery audit trail", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+    const inbound = await createWhatsAppConversation(t, {
+      externalMessageId: "wamid-send-success",
+      contactWaId: "5548991313199",
+      contactDisplayName: "Contato Mensagem",
+      body: "Oi, estou aguardando retorno.",
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ messages: [{ id: "wamid-outbound-1" }] }), { status: 200 }));
+
+    const outgoingBody = "Recebi seus dados e vou te orientar no proximo passo.";
+    await t.action(sendConversationMessageRef, {
+      sessionToken: session.sessionToken,
+      conversationId: inbound.conversationId,
+      body: outgoingBody,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toBe("https://graph.facebook.com/v22.0/waba_phone_legal_1/messages");
+    expect((init as RequestInit | undefined)?.headers).toMatchObject({
+      Authorization: `Bearer ${whatsappAccessToken}`,
+      "content-type": "application/json",
+    });
+    const payload = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      messaging_product: "whatsapp",
+      to: "5548991313199",
+      type: "text",
+      text: {
+        body: outgoingBody,
+      },
+    });
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: inbound.conversationId,
+    });
+    expect(thread.messages.some((item: { body: string; senderId: string }) => item.body === outgoingBody && item.senderId === "usr_ana")).toBe(true);
+
+    const audits = await t.query(listConversationAuditLogsRef, {
+      tenantId: "tenant_legal",
+      conversationId: inbound.conversationId,
+    });
+    expect(audits.some((row: { action: string }) => row.action === "conversation.message.whatsapp.sent")).toBe(true);
+  });
+
+  it("fails operator send when WhatsApp outbound fails and writes failure audit without local persistence", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+    const inbound = await createWhatsAppConversation(t, {
+      externalMessageId: "wamid-send-fail",
+      contactWaId: "5511998877665",
+      contactDisplayName: "Contato Falha Envio",
+      body: "Vocês podem me ajudar?",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "(#131030) Recipient phone number not in allowed list",
+          },
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const outgoingBody = "Vou te transferir para atendimento humano.";
+    await expectBusinessError(
+      t.action(sendConversationMessageRef, {
+        sessionToken: session.sessionToken,
+        conversationId: inbound.conversationId,
+        body: outgoingBody,
+      }),
+      "BAD_REQUEST",
+    );
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: inbound.conversationId,
+    });
+    expect(thread.messages.some((item: { body: string }) => item.body === outgoingBody)).toBe(false);
+
+    const audits = await t.query(listConversationAuditLogsRef, {
+      tenantId: "tenant_legal",
+      conversationId: inbound.conversationId,
+    });
+    expect(audits.some((row: { action: string }) => row.action === "conversation.message.whatsapp.sent")).toBe(false);
+    expect(audits.some((row: { action: string }) => row.action === "conversation.message.whatsapp.failed")).toBe(true);
   });
 
   it("closes conversation with reason and persists closure in dossier export", async () => {

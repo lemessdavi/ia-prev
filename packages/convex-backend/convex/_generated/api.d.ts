@@ -13,6 +13,7 @@ import type * as aiProfiles from "../aiProfiles.js";
 import type * as auth from "../auth.js";
 import type * as authNode from "../authNode.js";
 import type * as chatDomain from "../chatDomain.js";
+import type * as chatHandoffNode from "../chatHandoffNode.js";
 import type * as coreAuth from "../coreAuth.js";
 import type * as coreErrors from "../coreErrors.js";
 import type * as coreInput from "../coreInput.js";
@@ -27,6 +28,7 @@ import type * as testing from "../testing.js";
 import type * as users from "../users.js";
 import type * as usersNode from "../usersNode.js";
 import type * as wabaWebhook from "../wabaWebhook.js";
+import type * as wabaWebhookSecurityNode from "../wabaWebhookSecurityNode.js";
 import type * as whatsappBridge from "../whatsappBridge.js";
 import type * as whatsappBridgeNode from "../whatsappBridgeNode.js";
 
@@ -42,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authNode: typeof authNode;
   chatDomain: typeof chatDomain;
+  chatHandoffNode: typeof chatHandoffNode;
   coreAuth: typeof coreAuth;
   coreErrors: typeof coreErrors;
   coreInput: typeof coreInput;
@@ -56,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   users: typeof users;
   usersNode: typeof usersNode;
   wabaWebhook: typeof wabaWebhook;
+  wabaWebhookSecurityNode: typeof wabaWebhookSecurityNode;
   whatsappBridge: typeof whatsappBridge;
   whatsappBridgeNode: typeof whatsappBridgeNode;
 }>;

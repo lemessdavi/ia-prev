@@ -311,10 +311,10 @@ export const api = {
       "chatDomain:getConversationMessages",
     ),
     sendMessage: makeFunctionReference<
-      "mutation",
+      "action",
       { sessionToken: string; conversationId: string; body: string; attachmentUrl?: string },
       Message
-    >("chatDomain:sendMessage"),
+    >("chatHandoffNode:sendConversationMessage"),
     markConversationAsRead: makeFunctionReference<
       "mutation",
       { sessionToken: string; conversationId: string },

@@ -553,6 +553,14 @@ export const prepareConversationHandoff = internalQuery({
       conversationId,
     });
 
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
     if (conversation.conversationStatus === "FECHADO") {
       throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
         tenantId: session.tenantId,
@@ -752,6 +760,92 @@ export const logConversationHandoffNotificationFailure = internalMutation({
       tenantId: session.tenantId,
       actorUserId: session.userId,
       action: "conversation.handoff.whatsapp_notification.failed",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: reason,
+      createdAt: now,
+    });
+
+    return null;
+  },
+});
+
+export const logConversationMessageWhatsAppSent = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    messageId: v.string(),
+    externalMessageId: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const messageId = assertId(args.messageId, "messageId");
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    const externalMessageId = args.externalMessageId?.trim();
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_message_whatsapp_sent_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.message.whatsapp.sent",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: externalMessageId
+        ? `messageId=${messageId};externalMessageId=${externalMessageId}`
+        : `messageId=${messageId}`,
+      createdAt: now,
+    });
+
+    return null;
+  },
+});
+
+export const logConversationMessageWhatsAppFailure = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    reason: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const reason = args.reason.trim().slice(0, 1_000) || "unknown_error";
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_message_whatsapp_failed_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.message.whatsapp.failed",
       targetType: "conversation",
       targetId: conversationId,
       details: reason,
