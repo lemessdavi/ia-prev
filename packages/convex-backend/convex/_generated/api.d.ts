@@ -25,6 +25,7 @@ import type * as seedNode from "../seedNode.js";
 import type * as server from "../server.js";
 import type * as tenants from "../tenants.js";
 import type * as testing from "../testing.js";
+import type * as triageEngine from "../triageEngine.js";
 import type * as users from "../users.js";
 import type * as usersNode from "../usersNode.js";
 import type * as wabaWebhook from "../wabaWebhook.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   server: typeof server;
   tenants: typeof tenants;
   testing: typeof testing;
+  triageEngine: typeof triageEngine;
   users: typeof users;
   usersNode: typeof usersNode;
   wabaWebhook: typeof wabaWebhook;
