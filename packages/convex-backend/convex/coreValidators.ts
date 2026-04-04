@@ -13,6 +13,40 @@ export const triageResultValidator = v.union(
   v.literal("NAO_APTO"),
   v.literal("N_A"),
 );
+export const triageFlowValidator = v.union(
+  v.literal("AUXILIO_ACIDENTE"),
+  v.literal("APOSENTADORIA_ANTECIPADA"),
+);
+export const triageAnswersValidator = v.object({
+  teveAcidente: v.optional(v.boolean()),
+  possuiSequelaConsolidada: v.optional(v.boolean()),
+  reducaoCapacidadeLaboral: v.optional(v.boolean()),
+  possuiQualidadeSegurado: v.optional(v.boolean()),
+  anoAcidente: v.optional(v.number()),
+  idade: v.optional(v.number()),
+  tempoContribuicaoAnos: v.optional(v.number()),
+  possuiCarenciaMinima: v.optional(v.boolean()),
+  possuiTempoEspecialComprovado: v.optional(v.boolean()),
+});
+export const triageEvaluationValidator = v.object({
+  triageResult: triageResultValidator,
+  reasons: v.array(v.string()),
+  missingFields: v.array(v.string()),
+  inconsistencies: v.array(v.string()),
+  evaluatedAt: v.number(),
+});
+export const conversationTriageValidator = v.object({
+  conversationId: v.string(),
+  flowType: triageFlowValidator,
+  answers: triageAnswersValidator,
+  triageResult: triageResultValidator,
+  reasons: v.array(v.string()),
+  missingFields: v.array(v.string()),
+  inconsistencies: v.array(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  evaluatedAt: v.optional(v.number()),
+});
 
 export const sessionValidator = v.object({
   sessionToken: v.string(),
