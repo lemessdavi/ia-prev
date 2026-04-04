@@ -2,7 +2,7 @@
 import React, { type ReactNode } from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import ConversationsScreen from "./index";
+import ConversationsScreen from "@/app/(tabs)/index";
 
 const selectConversationMock = vi.fn();
 const logoutMock = vi.fn();
@@ -73,15 +73,11 @@ vi.mock("react-native", () => {
     Text: element("span"),
     Pressable: element("button"),
     TextInput: element("input"),
-    FlatList: ({ data, renderItem }: { data: Array<unknown>; renderItem: (input: { item: unknown }) => ReactNode }) => (
+    FlatList: ({ data, renderItem }: { data: unknown[]; renderItem: (input: { item: unknown }) => ReactNode }) => (
       <div>{data.map((item, index) => React.createElement(React.Fragment, { key: index }, renderItem({ item })))}</div>
     ),
   };
 });
-
-vi.mock("@/components/AuthGate", () => ({
-  AuthGate: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
 
 vi.mock("@/context/operatorAppContext", () => ({
   useOperatorApp: () => useOperatorAppMock(),

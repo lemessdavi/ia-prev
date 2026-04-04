@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Index from "./index";
+import Index from "@/app/index";
 
 const redirectSpy = vi.fn();
 const useOperatorAppMock = vi.fn();
