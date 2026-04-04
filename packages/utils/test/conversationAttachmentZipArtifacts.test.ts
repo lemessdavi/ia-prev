@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { conversationAttachmentExportZipFileName } from "../src/conversationAttachmentExportZipFileName";
 import { bytesToBase64, createConversationAttachmentZipFiles } from "../src/conversationAttachmentZipArtifacts";
 
 const sampleExport = {
@@ -16,6 +17,18 @@ const sampleExport = {
     },
   ],
 };
+
+test("uses contact phone as zip name for WhatsApp bridge conversation ids", () => {
+  const waConversationId = "conv_wa_tenant_legal_1070020079525326_554891313199";
+  assert.equal(conversationAttachmentExportZipFileName(waConversationId), "554891313199.zip");
+
+  const files = createConversationAttachmentZipFiles({
+    ...sampleExport,
+    conversationId: waConversationId,
+  });
+  assert.equal(files.baseName, "554891313199");
+  assert.equal(files.zipFileName, "554891313199.zip");
+});
 
 test("creates deterministic zip file names for conversation attachments", () => {
   const files = createConversationAttachmentZipFiles(sampleExport);

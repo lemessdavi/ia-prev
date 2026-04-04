@@ -1,4 +1,5 @@
 import { assertTenantAccess, requirePersistedSession } from "./auth";
+import { conversationAttachmentExportZipFileName } from "./conversationAttachmentExportZipFileName";
 import { BackendError, logInfo } from "./errors";
 import { InMemoryBackendStore } from "./store";
 import type {
@@ -236,7 +237,7 @@ export function exportConversationAttachmentArchive(input: {
 
   const now = input.now ?? Date.now();
   const attachments = input.store.listAttachments(conversationId, session.tenantId);
-  const zipFileName = `arquivos-conversa-${conversationId}.zip`;
+  const zipFileName = conversationAttachmentExportZipFileName(conversationId);
   const zipDownloadUrl = `https://cdn.iaprev.com/archives/${encodeURIComponent(zipFileName)}`;
 
   input.store.insertAuditLog({

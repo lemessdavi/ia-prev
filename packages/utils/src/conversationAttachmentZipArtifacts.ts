@@ -1,3 +1,5 @@
+import { conversationAttachmentExportZipFileName } from "./conversationAttachmentExportZipFileName";
+
 type ConversationAttachmentZipInput = {
   conversationId: string;
   generatedAtIso: string;
@@ -23,9 +25,8 @@ type ZipEntry = {
 const CRC32_TABLE = buildCrc32Table();
 
 export function createConversationAttachmentZipFiles(input: ConversationAttachmentZipInput): ConversationAttachmentZipFiles {
-  const safeConversationId = sanitizeFileToken(input.conversationId);
-  const baseName = `arquivos-conversa-${safeConversationId}`;
-  const zipFileName = `${baseName}.zip`;
+  const zipFileName = conversationAttachmentExportZipFileName(input.conversationId);
+  const baseName = zipFileName.toLowerCase().endsWith(".zip") ? zipFileName.slice(0, -4) : zipFileName;
 
   const entryNames = new Set<string>();
   const entries: ZipEntry[] = input.attachments.map((attachment, index) => {
@@ -96,11 +97,6 @@ function sanitizeAttachmentFileName(fileName: string, index: number): string {
   }
 
   return `arquivo-${index + 1}.bin`;
-}
-
-function sanitizeFileToken(input: string): string {
-  const normalized = input.trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
-  return normalized.replace(/-+/g, "-").replace(/^-|-$/g, "") || "conversa";
 }
 
 function utf8Encode(value: string): Uint8Array {

@@ -32,6 +32,7 @@ import {
   tenantWorkspaceSummaryValidator,
   triageResultValidator,
 } from "./coreValidators";
+import { conversationAttachmentExportZipFileName } from "../../utils/src/conversationAttachmentExportZipFileName";
 
 type SessionShape = {
   tenantId: string;
@@ -168,12 +169,6 @@ async function toThreadAttachment(ctx: any, row: any) {
     url: await resolveAttachmentUrl(ctx, row),
     storageId: row.storageId,
   };
-}
-
-function normalizeArchiveBaseName(conversationId: string): string {
-  const normalized = conversationId.trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
-  const safeConversationId = normalized.replace(/-+/g, "-").replace(/^-|-$/g, "") || "conversa";
-  return `arquivos-conversa-${safeConversationId}`;
 }
 
 function normalizeAttachmentFileName(fileName: string, index: number): string {
@@ -1422,8 +1417,7 @@ export const exportConversationAttachmentArchive = action({
       });
     }
 
-    const baseName = normalizeArchiveBaseName(source.conversationId);
-    const zipFileName = `${baseName}.zip`;
+    const zipFileName = conversationAttachmentExportZipFileName(source.conversationId);
 
     await ctx.runMutation(recordConversationAttachmentArchiveExportRef, {
       tenantId: source.tenantId,
