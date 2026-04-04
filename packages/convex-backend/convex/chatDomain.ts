@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./server";
+import { internalMutation, internalQuery, mutation, query } from "./server";
 import {
   findUserByUserId,
   requireSession,
@@ -34,6 +34,16 @@ type SessionShape = {
   tenantId: string;
   userId: string;
 };
+
+const handoffPreparationValidator = v.object({
+  tenantId: v.string(),
+  conversationId: v.string(),
+  operatorUserId: v.string(),
+  operatorName: v.string(),
+  phoneNumberId: v.string(),
+  recipientWaId: v.string(),
+  notificationMessage: v.string(),
+});
 
 async function requireConversationForParticipant(db: any, input: { tenantId: string; conversationId: string; userId: string }) {
   const conversation = await db
@@ -90,6 +100,18 @@ function resolveContactId(participantIds: string[], currentUserId: string): stri
     });
   }
   return candidate;
+}
+
+function buildHandoffNotificationMessage(operatorName: string): string {
+  return `${operatorName} assumiu a conversa e continuará seu atendimento por aqui.`;
+}
+
+function sanitizeIdPart(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (normalized.length === 0) {
+    return "x";
+  }
+  return normalized.slice(0, 80);
 }
 
 function toInlineAttachment(messageId: string, attachmentUrl?: string): {
@@ -516,10 +538,107 @@ export const markConversationAsRead = mutation({
   },
 });
 
-export const takeConversationHandoff = mutation({
+export const prepareConversationHandoff = internalQuery({
   args: {
     sessionToken: v.string(),
     conversationId: v.string(),
+  },
+  returns: handoffPreparationValidator,
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    if (conversation.conversationStatus === "FECHADO") {
+      throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
+        tenantId: session.tenantId,
+        conversationId,
+      });
+    }
+
+    const contactId = resolveContactId(conversation.participantIds, session.userId);
+    if (!contactId.startsWith("wa_contact_")) {
+      throwBusinessError("BAD_REQUEST", "Conversation is not linked to a WhatsApp contact.", {
+        tenantId: session.tenantId,
+        conversationId,
+        contactId,
+      });
+    }
+
+    const recipientWaId = contactId.slice("wa_contact_".length);
+    if (!recipientWaId) {
+      throwBusinessError("BAD_REQUEST", "Conversation WhatsApp contact is invalid.", {
+        tenantId: session.tenantId,
+        conversationId,
+      });
+    }
+
+    const activeMappings = (
+      await ctx.db
+        .query("wabaTenantMappings")
+        .withIndex("by_tenant", (q: any) => q.eq("tenantId", session.tenantId))
+        .collect()
+    ).filter((mapping: any) => mapping.isActive);
+
+    if (activeMappings.length === 0) {
+      throwBusinessError("NOT_FOUND", "No active WABA mapping found for tenant.", {
+        tenantId: session.tenantId,
+      });
+    }
+
+    let selectedMapping = activeMappings[0];
+    if (activeMappings.length > 1) {
+      const matchingMappings = activeMappings.filter((mapping: any) =>
+        conversationId.includes(`_${sanitizeIdPart(mapping.phoneNumberId)}_`),
+      );
+
+      if (matchingMappings.length !== 1) {
+        throwBusinessError("BAD_REQUEST", "Unable to resolve WABA mapping for conversation.", {
+          tenantId: session.tenantId,
+          conversationId,
+          mappingCount: activeMappings.length,
+        });
+      }
+
+      selectedMapping = matchingMappings[0];
+    }
+
+    const operator = await findUserByUserId(ctx.db, session.userId);
+    if (!operator) {
+      throwBusinessError("UNAUTHENTICATED", "Operator was not found for this session.", {
+        userId: session.userId,
+      });
+    }
+
+    return {
+      tenantId: session.tenantId,
+      conversationId,
+      operatorUserId: session.userId,
+      operatorName: operator.fullName,
+      phoneNumberId: selectedMapping.phoneNumberId,
+      recipientWaId,
+      notificationMessage: buildHandoffNotificationMessage(operator.fullName),
+    };
+  },
+});
+
+export const completeConversationHandoff = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    notificationMessage: v.string(),
   },
   returns: v.object({
     conversationId: v.string(),
@@ -529,6 +648,7 @@ export const takeConversationHandoff = mutation({
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);
     const conversationId = assertId(args.conversationId, "conversationId");
+    const notificationMessage = assertMessageBody(args.notificationMessage);
     const now = Date.now();
 
     const conversation = await requireTenantConversation(ctx.db, {
@@ -550,6 +670,8 @@ export const takeConversationHandoff = mutation({
     await ctx.db.patch(conversation._id, {
       participantIds,
       conversationStatus: "EM_ATENDIMENTO_HUMANO",
+      lastMessagePreview: notificationMessage,
+      lastMessageAt: now,
       lastActivityAt: now,
     });
 
@@ -564,6 +686,17 @@ export const takeConversationHandoff = mutation({
       createdAt: now,
     });
 
+    const messageId = `msg_handoff_${conversationId}_${now}_${crypto.randomUUID()}`;
+    await ctx.db.insert("messages", {
+      messageId,
+      tenantId: session.tenantId,
+      conversationId,
+      senderId: session.userId,
+      body: notificationMessage,
+      createdAt: now,
+      readBy: [session.userId],
+    });
+
     await ctx.db.insert("auditLogs", {
       auditLogId: `audit_handoff_${conversationId}_${now}_${crypto.randomUUID()}`,
       tenantId: session.tenantId,
@@ -574,11 +707,152 @@ export const takeConversationHandoff = mutation({
       createdAt: now,
     });
 
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_handoff_notify_sent_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.handoff.whatsapp_notification.sent",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: `messageId=${messageId}`,
+      createdAt: now,
+    });
+
     return {
       conversationId,
       conversationStatus: "EM_ATENDIMENTO_HUMANO" as const,
       handoffEventId,
     };
+  },
+});
+
+export const logConversationHandoffNotificationFailure = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    reason: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const reason = args.reason.trim().slice(0, 1_000) || "unknown_error";
+    const now = Date.now();
+
+    await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_handoff_failed_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.handoff.taken.failed",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: `notification_failure:${reason}`,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_handoff_notify_failed_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.handoff.whatsapp_notification.failed",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: reason,
+      createdAt: now,
+    });
+
+    return null;
+  },
+});
+
+export const logConversationMessageWhatsAppSent = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    messageId: v.string(),
+    externalMessageId: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const messageId = assertId(args.messageId, "messageId");
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    const externalMessageId = args.externalMessageId?.trim();
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_message_whatsapp_sent_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.message.whatsapp.sent",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: externalMessageId
+        ? `messageId=${messageId};externalMessageId=${externalMessageId}`
+        : `messageId=${messageId}`,
+      createdAt: now,
+    });
+
+    return null;
+  },
+});
+
+export const logConversationMessageWhatsAppFailure = internalMutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    reason: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const reason = args.reason.trim().slice(0, 1_000) || "unknown_error";
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_message_whatsapp_failed_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.message.whatsapp.failed",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: reason,
+      createdAt: now,
+    });
+
+    return null;
   },
 });
 

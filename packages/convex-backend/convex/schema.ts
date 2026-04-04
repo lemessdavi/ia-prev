@@ -164,6 +164,7 @@ export default defineSchema({
     action: v.string(),
     targetType: v.string(),
     targetId: v.string(),
+    details: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_audit_log_id", ["auditLogId"])

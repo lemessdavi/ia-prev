@@ -21,6 +21,12 @@ pnpm dev              # Start all apps
 
 This repository now runs web/mobile against Convex as the primary runtime.
 
+WhatsApp processing flow is direct and does not use external orchestration:
+
+- Meta WhatsApp Webhook -> Convex (`/webhooks/waba`)
+- Convex -> OpenAI
+- Convex -> WhatsApp Cloud API
+
 1. Configure backend env:
    - Copy `packages/convex-backend/.env.example` and set `CONVEX_DEPLOYMENT`.
 2. Configure frontend envs:
@@ -28,6 +34,9 @@ This repository now runs web/mobile against Convex as the primary runtime.
    - Mobile: copy `apps/mobile/.env.example` and set `EXPO_PUBLIC_CONVEX_URL`.
 3. Run Convex + apps together:
    - `pnpm dev`
+   - The script auto-loads `CONVEX_DEPLOYMENT` from `packages/convex-backend/.env.local` (or root `.env.local`).
+   - If `CONVEX_DEPLOYMENT` is missing, Convex is skipped and web/mobile continue.
+   - To force Convex dev manually in interactive mode: `pnpm convex:dev:force`
 
 Useful commands:
 - `pnpm convex:dev`

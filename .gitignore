@@ -17,3 +17,6 @@ test-results
 # Claude local
 .claude
 CLAUDE.md
+
+# Local environment secrets
+.env.local

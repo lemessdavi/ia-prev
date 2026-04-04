@@ -33,7 +33,15 @@ export interface BackendApiClient {
   logout(): Promise<void>;
   getWorkspace(): Promise<TenantWorkspaceSummaryDTO>;
   listConversations(params?: { status?: string; search?: string }): Promise<ConversationInboxItemDTO[]>;
+  subscribeToConversations(
+    params: { status?: string; search?: string } | undefined,
+    onUpdate: (rows: ConversationInboxItemDTO[]) => void,
+  ): Promise<() => void>;
   getConversationThread(conversationId: string): Promise<ConversationThreadPayloadDTO>;
+  subscribeToConversationThread(
+    conversationId: string,
+    onUpdate: (payload: ConversationThreadPayloadDTO) => void,
+  ): Promise<() => void>;
   markConversationAsRead(conversationId: string): Promise<{ conversationId: string; updatedCount: number }>;
   sendMessage(conversationId: string, body: string, attachmentUrl?: string): Promise<void>;
   takeHandoff(conversationId: string): Promise<void>;
@@ -108,6 +116,10 @@ function parseBackendError(error: unknown): BackendApiError["error"] {
     code: "INTERNAL",
     message: candidate.message ?? fallback.message,
   };
+}
+
+function normalizeConversationStatus(status: string | undefined) {
+  return status as "ALL" | "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO" | undefined;
 }
 
 export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendApiClient {
@@ -200,9 +212,33 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
         const client = getConvexClient(convexUrl);
         return await client.query(convexApi.chat.listConversationsForInbox, {
           sessionToken: requireSessionToken(),
-          status: params?.status as "ALL" | "EM_TRIAGEM" | "PENDENTE_HUMANO" | "EM_ATENDIMENTO_HUMANO" | "FECHADO" | undefined,
+          status: normalizeConversationStatus(params?.status),
           search: params?.search,
         });
+      });
+    },
+    async subscribeToConversations(params, onUpdate) {
+      return await execute(async () => {
+        const client = getConvexClient(convexUrl);
+        const watch = client.watchQuery(convexApi.chat.listConversationsForInbox, {
+          sessionToken: requireSessionToken(),
+          status: normalizeConversationStatus(params?.status),
+          search: params?.search,
+        });
+
+        const pushLatest = () => {
+          const rows = watch.localQueryResult();
+          if (rows !== undefined) {
+            onUpdate(rows);
+          }
+        };
+
+        const unsubscribe = watch.onUpdate(pushLatest);
+        pushLatest();
+
+        return () => {
+          unsubscribe();
+        };
       });
     },
     async getConversationThread(conversationId) {
@@ -212,6 +248,29 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
           sessionToken: requireSessionToken(),
           conversationId,
         });
+      });
+    },
+    async subscribeToConversationThread(conversationId, onUpdate) {
+      return await execute(async () => {
+        const client = getConvexClient(convexUrl);
+        const watch = client.watchQuery(convexApi.chat.getConversationThread, {
+          sessionToken: requireSessionToken(),
+          conversationId,
+        });
+
+        const pushLatest = () => {
+          const payload = watch.localQueryResult();
+          if (payload !== undefined) {
+            onUpdate(payload);
+          }
+        };
+
+        const unsubscribe = watch.onUpdate(pushLatest);
+        pushLatest();
+
+        return () => {
+          unsubscribe();
+        };
       });
     },
     async markConversationAsRead(conversationId) {
@@ -226,7 +285,7 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
     async sendMessage(conversationId, body, attachmentUrl) {
       await execute(async () => {
         const client = getConvexClient(convexUrl);
-        await client.mutation(convexApi.chat.sendMessage, {
+        await client.action(convexApi.chat.sendMessage, {
           sessionToken: requireSessionToken(),
           conversationId,
           body,
@@ -237,7 +296,7 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
     async takeHandoff(conversationId) {
       await execute(async () => {
         const client = getConvexClient(convexUrl);
-        await client.mutation(convexApi.chat.takeConversationHandoff, {
+        await client.action(convexApi.chat.takeConversationHandoff, {
           sessionToken: requireSessionToken(),
           conversationId,
         });
