@@ -3,7 +3,7 @@ import { throwBusinessError } from "./coreErrors";
 export function assertId(value: string, field: string): string {
   const normalized = value?.trim();
   if (!normalized || normalized.length < 3) {
-    throwBusinessError("BAD_REQUEST", `Invalid ${field}.`, { field, value });
+    throwBusinessError("BAD_REQUEST", `${field} invalido.`, { field, value });
   }
   return normalized;
 }
@@ -13,7 +13,7 @@ export function assertUsername(username: string): string {
   if (!normalized || normalized.length < 3 || normalized.length > 64 || !/^[a-z0-9._-]+$/.test(normalized)) {
     throwBusinessError(
       "BAD_REQUEST",
-      "Username must have 3 to 64 chars and use only letters, numbers, dot, dash or underscore.",
+      "O nome de usuario deve ter de 3 a 64 caracteres e usar apenas letras, numeros, ponto, hifen ou underscore.",
       { username },
     );
   }
@@ -22,7 +22,7 @@ export function assertUsername(username: string): string {
 
 export function assertPassword(password: string, field = "password"): string {
   if (!password || password.length < 8 || password.length > 128) {
-    throwBusinessError("BAD_REQUEST", `${field} must be between 8 and 128 chars.`, {
+    throwBusinessError("BAD_REQUEST", `${field} deve ter entre 8 e 128 caracteres.`, {
       field,
       length: password?.length ?? 0,
     });
@@ -33,7 +33,7 @@ export function assertPassword(password: string, field = "password"): string {
 export function assertTenantName(name: string, field = "name"): string {
   const normalized = name?.trim();
   if (!normalized || normalized.length < 2 || normalized.length > 120) {
-    throwBusinessError("BAD_REQUEST", `${field} must be between 2 and 120 chars.`, {
+    throwBusinessError("BAD_REQUEST", `${field} deve ter entre 2 e 120 caracteres.`, {
       field,
       length: normalized?.length ?? 0,
     });
@@ -46,7 +46,7 @@ export function assertSlug(slug: string, field = "slug"): string {
   if (!normalized || !/^[a-z0-9-]{3,64}$/.test(normalized)) {
     throwBusinessError(
       "BAD_REQUEST",
-      `${field} must have 3 to 64 chars and use only lowercase letters, numbers and dash.`,
+      `${field} deve ter de 3 a 64 caracteres e usar apenas letras minusculas, numeros e hifen.`,
       {
         field,
         slug,
@@ -59,7 +59,7 @@ export function assertSlug(slug: string, field = "slug"): string {
 export function assertEmail(email: string): string {
   const normalized = email?.trim().toLowerCase();
   if (!normalized || normalized.length < 5 || normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    throwBusinessError("BAD_REQUEST", "email is invalid.", { email });
+    throwBusinessError("BAD_REQUEST", "E-mail invalido.", { email });
   }
   return normalized;
 }
@@ -67,7 +67,7 @@ export function assertEmail(email: string): string {
 export function assertMessageBody(body: string): string {
   const trimmed = body?.trim();
   if (!trimmed || trimmed.length < 1 || trimmed.length > 1500) {
-    throwBusinessError("BAD_REQUEST", "Message must be between 1 and 1500 chars.", {
+    throwBusinessError("BAD_REQUEST", "A mensagem deve ter entre 1 e 1500 caracteres.", {
       length: trimmed?.length ?? 0,
     });
   }
@@ -77,7 +77,7 @@ export function assertMessageBody(body: string): string {
 export function assertAttachmentUrl(attachmentUrl?: string): string | undefined {
   if (attachmentUrl === undefined) return undefined;
   if (!attachmentUrl.startsWith("https://")) {
-    throwBusinessError("BAD_REQUEST", "Attachment URL must use https.", {
+    throwBusinessError("BAD_REQUEST", "A URL do anexo deve usar HTTPS.", {
       attachmentUrl,
     });
   }
@@ -105,7 +105,7 @@ export function assertConversationStatusFilter(status?: string):
     return normalized;
   }
 
-  throwBusinessError("BAD_REQUEST", "status filter is invalid.", {
+  throwBusinessError("BAD_REQUEST", "O filtro de status e invalido.", {
     status,
   });
 }
@@ -115,7 +115,7 @@ export function assertSearchTerm(search?: string): string | undefined {
   const normalized = search.trim().toLowerCase();
   if (normalized.length === 0) return undefined;
   if (normalized.length > 120) {
-    throwBusinessError("BAD_REQUEST", "search filter is too long.", {
+    throwBusinessError("BAD_REQUEST", "O filtro de busca esta muito longo.", {
       length: normalized.length,
     });
   }
@@ -125,7 +125,7 @@ export function assertSearchTerm(search?: string): string | undefined {
 export function assertClosureReason(reason: string): string {
   const normalized = reason?.trim();
   if (!normalized || normalized.length < 5 || normalized.length > 500) {
-    throwBusinessError("BAD_REQUEST", "Closure reason must be between 5 and 500 chars.", {
+    throwBusinessError("BAD_REQUEST", "O motivo de encerramento deve ter entre 5 e 500 caracteres.", {
       length: normalized?.length ?? 0,
     });
   }

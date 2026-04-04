@@ -16,6 +16,7 @@ const sendConversationMessageRef = makeFunctionReference<"action">("chatHandoffN
 const setConversationTriageResultRef = makeFunctionReference<"mutation">("chatDomain:setConversationTriageResult");
 const closeConversationWithReasonRef = makeFunctionReference<"mutation">("chatDomain:closeConversationWithReason");
 const exportConversationAttachmentArchiveRef = makeFunctionReference<"action">("chatDomain:exportConversationAttachmentArchive");
+const clearConversationChatRef = makeFunctionReference<"mutation">("chatDomain:clearConversationChat");
 const listConversationAuditLogsRef = makeFunctionReference<"query">("testing:listConversationAuditLogs");
 
 const whatsappAccessToken = "wa_test_access_token";
@@ -168,6 +169,56 @@ describe("Convex tenant operator workspace flows", () => {
         conversationId: "conv_ana_caio",
       }),
       "NOT_FOUND",
+    );
+  });
+
+  it("clears all messages, attachments and handoff events from the database for a participant", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    const before = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_caio",
+    });
+    expect(before.messages.length).toBeGreaterThanOrEqual(3);
+    expect(before.handoffEvents.length).toBeGreaterThanOrEqual(1);
+
+    const result = await t.mutation(clearConversationChatRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_caio",
+    });
+
+    expect(result).toMatchObject({
+      conversationId: "conv_ana_caio",
+      removedMessageCount: 3,
+      removedAttachmentCount: 1,
+      removedHandoffEventCount: 1,
+    });
+
+    const after = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_caio",
+    });
+    expect(after.messages).toHaveLength(0);
+    expect(after.handoffEvents).toHaveLength(0);
+
+    const audits = await t.query(listConversationAuditLogsRef, {
+      tenantId: "tenant_legal",
+      conversationId: "conv_ana_caio",
+    });
+    expect(audits.some((row: { action: string }) => row.action === "conversation.chat.cleared")).toBe(true);
+  });
+
+  it("rejects clearing chat when the user is not a conversation participant", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "marina.rocha", "Marina@123456");
+
+    await expectBusinessError(
+      t.mutation(clearConversationChatRef, {
+        sessionToken: session.sessionToken,
+        conversationId: "conv_ana_caio",
+      }),
+      "FORBIDDEN",
     );
   });
 

@@ -44,8 +44,9 @@ export async function loginAs(page: Page, credentials: OperatorCredentials): Pro
   try {
     await expect(page.getByTestId("workspace-tenant-name")).toBeVisible({ timeout: 15_000 });
   } catch {
-    const errorBanner = page.getByTestId("global-error-banner");
-    const errorMessage = (await errorBanner.first().textContent().catch(() => null))?.trim();
+    const modalMessage = (await page.getByTestId("global-error-modal-message").first().textContent().catch(() => null))?.trim();
+    const toastMessage = (await page.getByTestId("global-error-toast").first().textContent().catch(() => null))?.trim();
+    const errorMessage = modalMessage ?? toastMessage ?? null;
     throw new Error(
       `Falha ao autenticar no E2E. ${errorMessage ? `Mensagem da UI: ${errorMessage}` : "Sem mensagem de erro visivel."}`,
     );

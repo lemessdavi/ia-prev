@@ -90,6 +90,27 @@ vi.mock("@/context/operatorAppContext", () => ({
   useOperatorApp: () => useOperatorAppMock(),
 }));
 
+const authenticatedMockBase = {
+  isAuthenticated: true,
+  workspace: {
+    tenantName: "IA Prev Demo",
+    wabaLabel: "WA Demo",
+    activeAiProfileName: "IA Assistente",
+  },
+  conversations: [],
+  selectedConversationId: null,
+  statusFilter: "ALL" as const,
+  setStatusFilter: vi.fn(),
+  search: "",
+  setSearch: vi.fn(),
+  loadingConversations: false,
+  blockingErrorMessage: null,
+  toastErrorMessage: null,
+  clearError: vi.fn(),
+  selectConversation: vi.fn(),
+  logout: vi.fn(),
+};
+
 describe("Index route", () => {
   beforeEach(() => {
     redirectSpy.mockClear();
@@ -106,24 +127,7 @@ describe("Index route", () => {
   });
 
   it("renders the chats list for authenticated users without tabs redirect", () => {
-    useOperatorAppMock.mockReturnValue({
-      isAuthenticated: true,
-      workspace: {
-        tenantName: "IA Prev Demo",
-        wabaLabel: "WA Demo",
-        activeAiProfileName: "IA Assistente",
-      },
-      conversations: [],
-      selectedConversationId: null,
-      statusFilter: "ALL",
-      setStatusFilter: vi.fn(),
-      search: "",
-      setSearch: vi.fn(),
-      loadingConversations: false,
-      errorMessage: null,
-      selectConversation: vi.fn(),
-      logout: vi.fn(),
-    });
+    useOperatorAppMock.mockReturnValue(authenticatedMockBase);
 
     render(<Index />);
 
@@ -131,24 +135,7 @@ describe("Index route", () => {
   });
 
   it("renders a logout icon button on the right side of the tenant header row", () => {
-    useOperatorAppMock.mockReturnValue({
-      isAuthenticated: true,
-      workspace: {
-        tenantName: "IA Prev Demo",
-        wabaLabel: "WA Demo",
-        activeAiProfileName: "IA Assistente",
-      },
-      conversations: [],
-      selectedConversationId: null,
-      statusFilter: "ALL",
-      setStatusFilter: vi.fn(),
-      search: "",
-      setSearch: vi.fn(),
-      loadingConversations: false,
-      errorMessage: null,
-      selectConversation: vi.fn(),
-      logout: vi.fn(),
-    });
+    useOperatorAppMock.mockReturnValue(authenticatedMockBase);
 
     render(<Index />);
 

@@ -117,7 +117,9 @@ describe("Conversations screen", () => {
       search: "",
       setSearch: vi.fn(),
       loadingConversations: false,
-      errorMessage: null,
+      blockingErrorMessage: null,
+      toastErrorMessage: null,
+      clearError: vi.fn(),
       selectConversation: selectConversationMock,
       logout: logoutMock,
     });

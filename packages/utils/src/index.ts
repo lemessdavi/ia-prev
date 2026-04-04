@@ -14,3 +14,4 @@ export * from "./backendApiTypes";
 export * from "./backendApiClient";
 export * from "./messagePresentation";
 export * from "./conversationAttachmentZipArtifacts";
+export * from "./errorFeedback";

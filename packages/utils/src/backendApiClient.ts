@@ -48,12 +48,18 @@ export interface BackendApiClient {
   closeConversation(conversationId: string, reason: string): Promise<void>;
   setConversationTriageResult(conversationId: string, triageResult: TriageResult): Promise<void>;
   exportConversationAttachmentArchive(conversationId: string): Promise<ConversationAttachmentArchiveDTO>;
+  clearConversationChat(conversationId: string): Promise<{
+    conversationId: string;
+    removedMessageCount: number;
+    removedAttachmentCount: number;
+    removedHandoffEventCount: number;
+  }>;
 }
 
 function getConvexClient(convexUrl: string): ConvexReactClient {
   const normalized = convexUrl.trim().replace(/\/+$/, "");
   if (!normalized) {
-    throw new BackendApiClientError("Convex URL is not configured.", "INTERNAL", 500);
+    throw new BackendApiClientError("A URL do Convex nao esta configurada.", "INTERNAL", 500);
   }
 
   const existing = convexClientsByUrl.get(normalized);
@@ -67,7 +73,7 @@ function getConvexClient(convexUrl: string): ConvexReactClient {
 function parseBackendError(error: unknown): BackendApiError["error"] {
   const fallback = {
     code: "INTERNAL" as const,
-    message: error instanceof Error ? error.message : "Unexpected Convex error.",
+    message: error instanceof Error ? error.message : "Ocorreu um erro inesperado no backend.",
     meta: undefined as Record<string, unknown> | undefined,
   };
 
@@ -127,7 +133,7 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
 
   function requireSessionToken(): string {
     if (!sessionToken) {
-      throw new BackendApiClientError("You must be logged in.", "UNAUTHENTICATED", 401);
+      throw new BackendApiClientError("Voce precisa estar autenticado para continuar.", "UNAUTHENTICATED", 401);
     }
     return sessionToken;
   }
@@ -326,6 +332,15 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
       return await execute(async () => {
         const client = getConvexClient(convexUrl);
         return await client.action(convexApi.chat.exportConversationAttachmentArchive, {
+          sessionToken: requireSessionToken(),
+          conversationId,
+        });
+      });
+    },
+    async clearConversationChat(conversationId) {
+      return await execute(async () => {
+        const client = getConvexClient(convexUrl);
+        return await client.mutation(convexApi.chat.clearConversationChat, {
           sessionToken: requireSessionToken(),
           conversationId,
         });

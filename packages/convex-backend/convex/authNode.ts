@@ -24,11 +24,11 @@ export const loginWithUsernamePassword = action({
 
     const loginAccount = await ctx.runQuery(getLoginAccountRef, { username });
     if (!loginAccount || !verifyPassword(password, loginAccount.passwordHash)) {
-      throwBusinessError("UNAUTHENTICATED", "Invalid username or password.", { username });
+      throwBusinessError("UNAUTHENTICATED", "Usuario ou senha invalidos.", { username });
     }
 
     if (!loginAccount.isActive) {
-      throwBusinessError("FORBIDDEN", "This user is disabled.", {
+      throwBusinessError("FORBIDDEN", "Este usuario esta desativado.", {
         username,
         userId: loginAccount.userId,
       });

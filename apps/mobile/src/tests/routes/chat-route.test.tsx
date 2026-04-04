@@ -10,8 +10,9 @@ const setConversationTriageResultMock = vi.fn();
 const useOperatorAppMock = vi.fn();
 const scrollToEndMock = vi.fn();
 const scrollToMock = vi.fn();
-let latestScrollHandler: ((event: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => void) | null =
-  null;
+let latestScrollHandler: ((event: {
+  nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } };
+}) => void) | null = null;
 
 vi.mock("expo-router", () => ({
   Redirect: () => null,
@@ -210,7 +211,9 @@ describe("Chat route", () => {
       })),
       loadingThread: false,
       loadingAction: false,
-      errorMessage: null,
+      blockingErrorMessage: null,
+      toastErrorMessage: null,
+      clearError: vi.fn(),
       selectConversation: selectConversationMock,
       ...overrides,
     });

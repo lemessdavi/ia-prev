@@ -55,7 +55,7 @@ async function requireConversationForParticipant(db: any, input: { tenantId: str
     .unique();
 
   if (!conversation || conversation.tenantId !== input.tenantId) {
-    throwBusinessError("NOT_FOUND", "Conversation not found.", {
+    throwBusinessError("NOT_FOUND", "Conversa nao encontrada.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
     });
@@ -69,7 +69,7 @@ async function requireConversationForParticipant(db: any, input: { tenantId: str
     .unique();
 
   if (!membership) {
-    throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+    throwBusinessError("FORBIDDEN", "Voce nao pode acessar esta conversa.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
       userId: input.userId,
@@ -86,7 +86,7 @@ async function requireTenantConversation(db: any, input: { tenantId: string; con
     .unique();
 
   if (!conversation || conversation.tenantId !== input.tenantId) {
-    throwBusinessError("NOT_FOUND", "Conversation not found.", {
+    throwBusinessError("NOT_FOUND", "Conversa nao encontrada.", {
       conversationId: input.conversationId,
       tenantId: input.tenantId,
     });
@@ -98,7 +98,7 @@ async function requireTenantConversation(db: any, input: { tenantId: string; con
 function resolveContactId(participantIds: string[], currentUserId: string): string {
   const candidate = participantIds.find((id) => id !== currentUserId) ?? participantIds[0];
   if (!candidate) {
-    throwBusinessError("BAD_REQUEST", "Conversation is missing participants.", {
+    throwBusinessError("BAD_REQUEST", "A conversa esta sem participantes.", {
       currentUserId,
     });
   }
@@ -530,7 +530,7 @@ export const getTenantWorkspaceSummary = query({
     ]);
 
     if (!tenant || !wabaMapping || !activeProfile || !user || user.tenantId !== session.tenantId) {
-      throwBusinessError("NOT_FOUND", "Tenant workspace is not fully configured.", {
+      throwBusinessError("NOT_FOUND", "O workspace do tenant nao esta totalmente configurado.", {
         tenantId: session.tenantId,
         userId: session.userId,
       });
@@ -660,7 +660,7 @@ export const sendMessage = mutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -698,6 +698,101 @@ export const sendMessage = mutation({
   },
 });
 
+export const clearConversationChat = mutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+  },
+  returns: v.object({
+    conversationId: v.string(),
+    removedMessageCount: v.number(),
+    removedAttachmentCount: v.number(),
+    removedHandoffEventCount: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    if (!conversation.participantIds.includes(session.userId)) {
+      throwBusinessError("FORBIDDEN", "You cannot clear messages in this conversation.", {
+        tenantId: session.tenantId,
+        conversationId,
+        userId: session.userId,
+      });
+    }
+
+    const [messages, attachments, handoffEvents] = await Promise.all([
+      ctx.db
+        .query("messages")
+        .withIndex("by_tenant_id_and_conversation_id_and_created_at", (q: any) =>
+          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
+        )
+        .collect(),
+      ctx.db
+        .query("attachments")
+        .withIndex("by_tenant_id_and_conversation_id", (q: any) =>
+          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
+        )
+        .collect(),
+      ctx.db
+        .query("handoffEvents")
+        .withIndex("by_tenant_id_and_conversation_id_and_created_at", (q: any) =>
+          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
+        )
+        .collect(),
+    ]);
+
+    for (const row of attachments) {
+      if (row.storageId) {
+        await ctx.storage.delete(row.storageId);
+      }
+      await ctx.db.delete(row._id);
+    }
+
+    for (const row of messages) {
+      await ctx.db.delete(row._id);
+    }
+
+    for (const row of handoffEvents) {
+      await ctx.db.delete(row._id);
+    }
+
+    await ctx.db.patch(conversation._id, {
+      lastMessagePreview: "",
+      lastMessageAt: conversation.createdAt,
+      lastActivityAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_chat_cleared_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.chat.cleared",
+      targetType: "conversation",
+      targetId: conversationId,
+      details: JSON.stringify({
+        removedMessageCount: messages.length,
+        removedAttachmentCount: attachments.length,
+        removedHandoffEventCount: handoffEvents.length,
+      }),
+      createdAt: now,
+    });
+
+    return {
+      conversationId,
+      removedMessageCount: messages.length,
+      removedAttachmentCount: attachments.length,
+      removedHandoffEventCount: handoffEvents.length,
+    };
+  },
+});
+
 export const markConversationAsRead = mutation({
   args: {
     sessionToken: v.string(),
@@ -717,7 +812,7 @@ export const markConversationAsRead = mutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot update this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode atualizar esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -766,7 +861,7 @@ export const prepareConversationHandoff = internalQuery({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot access this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode acessar esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -774,7 +869,7 @@ export const prepareConversationHandoff = internalQuery({
     }
 
     if (conversation.conversationStatus === "FECHADO") {
-      throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
+      throwBusinessError("BAD_REQUEST", "A conversa ja esta encerrada.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -782,7 +877,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const contactId = resolveContactId(conversation.participantIds, session.userId);
     if (!contactId.startsWith("wa_contact_")) {
-      throwBusinessError("BAD_REQUEST", "Conversation is not linked to a WhatsApp contact.", {
+      throwBusinessError("BAD_REQUEST", "A conversa nao esta vinculada a um contato do WhatsApp.", {
         tenantId: session.tenantId,
         conversationId,
         contactId,
@@ -791,7 +886,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const recipientWaId = contactId.slice("wa_contact_".length);
     if (!recipientWaId) {
-      throwBusinessError("BAD_REQUEST", "Conversation WhatsApp contact is invalid.", {
+      throwBusinessError("BAD_REQUEST", "O contato do WhatsApp da conversa e invalido.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -805,7 +900,7 @@ export const prepareConversationHandoff = internalQuery({
     ).filter((mapping: any) => mapping.isActive);
 
     if (activeMappings.length === 0) {
-      throwBusinessError("NOT_FOUND", "No active WABA mapping found for tenant.", {
+      throwBusinessError("NOT_FOUND", "Nenhum mapeamento WABA ativo foi encontrado para o tenant.", {
         tenantId: session.tenantId,
       });
     }
@@ -817,7 +912,7 @@ export const prepareConversationHandoff = internalQuery({
       );
 
       if (matchingMappings.length !== 1) {
-        throwBusinessError("BAD_REQUEST", "Unable to resolve WABA mapping for conversation.", {
+        throwBusinessError("BAD_REQUEST", "Nao foi possivel resolver o mapeamento WABA da conversa.", {
           tenantId: session.tenantId,
           conversationId,
           mappingCount: activeMappings.length,
@@ -829,7 +924,7 @@ export const prepareConversationHandoff = internalQuery({
 
     const operator = await findUserByUserId(ctx.db, session.userId);
     if (!operator) {
-      throwBusinessError("UNAUTHENTICATED", "Operator was not found for this session.", {
+      throwBusinessError("UNAUTHENTICATED", "Operador nao encontrado para esta sessao.", {
         userId: session.userId,
       });
     }
@@ -869,7 +964,7 @@ export const completeConversationHandoff = internalMutation({
     });
 
     if (conversation.conversationStatus === "FECHADO") {
-      throwBusinessError("BAD_REQUEST", "Conversation is already closed.", {
+      throwBusinessError("BAD_REQUEST", "A conversa ja esta encerrada.", {
         tenantId: session.tenantId,
         conversationId,
       });
@@ -1002,7 +1097,7 @@ export const logConversationMessageWhatsAppSent = internalMutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -1046,7 +1141,7 @@ export const logConversationMessageWhatsAppFailure = internalMutation({
     });
 
     if (!conversation.participantIds.includes(session.userId)) {
-      throwBusinessError("FORBIDDEN", "You cannot send messages to this conversation.", {
+      throwBusinessError("FORBIDDEN", "Voce nao pode enviar mensagens para esta conversa.", {
         tenantId: session.tenantId,
         conversationId,
         userId: session.userId,
@@ -1461,7 +1556,7 @@ export const getWorkspaceSnapshot = query({
     ]);
 
     if (!tenant) {
-      throwBusinessError("NOT_FOUND", "Tenant not found.", {
+      throwBusinessError("NOT_FOUND", "Tenant nao encontrado.", {
         tenantId: session.tenantId,
       });
     }

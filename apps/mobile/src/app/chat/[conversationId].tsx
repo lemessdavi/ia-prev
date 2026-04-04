@@ -30,7 +30,6 @@ export default function ChatScreen() {
     exportConversationAttachmentArchive,
     loadingThread,
     loadingAction,
-    errorMessage,
     selectConversation,
   } = useOperatorApp();
   const [draft, setDraft] = useState("");
@@ -174,6 +173,7 @@ export default function ChatScreen() {
                 <Text>Compartilhar ZIP de anexos</Text>
               </Pressable>
             </View>
+            <View style={{ height: 2 }} />
           </View>
         </View>
       </View>
@@ -287,7 +287,6 @@ export default function ChatScreen() {
             <Ionicons name="send" size={18} color="#fff" />
           </Pressable>
         </View>
-        {errorMessage ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{errorMessage}</Text> : null}
         {shareError ? <Text style={{ marginTop: 8, color: "#b91c1c" }}>{shareError}</Text> : null}
       </View>
       <Modal visible={triageSheetOpen} transparent animationType="slide" onRequestClose={() => setTriageSheetOpen(false)}>

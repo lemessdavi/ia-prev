@@ -21,11 +21,11 @@ export function sendMessage(input: {
 
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
   }
 
   if (!conversation.participantIds.includes(session.userId)) {
-    throw new BackendError("You cannot send messages to this conversation.", "FORBIDDEN", {
+    throw new BackendError("Voce nao pode enviar mensagens para esta conversa.", "FORBIDDEN", {
       conversationId,
       userId: session.userId,
       tenantId: session.tenantId,
@@ -69,10 +69,10 @@ export function markConversationAsRead(input: {
 
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", { conversationId, tenantId: session.tenantId });
   }
   if (!conversation.participantIds.includes(session.userId)) {
-    throw new BackendError("You cannot update this conversation.", "FORBIDDEN", {
+    throw new BackendError("Voce nao pode atualizar esta conversa.", "FORBIDDEN", {
       conversationId,
       userId: session.userId,
       tenantId: session.tenantId,
@@ -103,7 +103,7 @@ export function resetUserPassword(input: {
   const account = input.store.findUserAccountByUserId(userId);
 
   if (!user || !account) {
-    throw new BackendError("User not found.", "NOT_FOUND", { userId });
+    throw new BackendError("Usuario nao encontrado.", "NOT_FOUND", { userId });
   }
 
   input.store.upsertUserAccount({
@@ -139,13 +139,13 @@ export function takeConversationHandoff(input: {
   const now = input.now ?? Date.now();
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", {
       conversationId,
       tenantId: session.tenantId,
     });
   }
   if (conversation.conversationStatus === "FECHADO") {
-    throw new BackendError("Conversation is already closed.", "BAD_REQUEST", {
+    throw new BackendError("A conversa ja esta encerrada.", "BAD_REQUEST", {
       conversationId,
       tenantId: session.tenantId,
     });
@@ -201,7 +201,7 @@ export function closeConversationWithReason(input: {
   const now = input.now ?? Date.now();
   const conversation = input.store.findConversation(conversationId, session.tenantId);
   if (!conversation) {
-    throw new BackendError("Conversation not found.", "NOT_FOUND", {
+    throw new BackendError("Conversa nao encontrada.", "NOT_FOUND", {
       conversationId,
       tenantId: session.tenantId,
     });

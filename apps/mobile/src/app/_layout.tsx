@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GlobalErrorFeedback } from "@/components/GlobalErrorFeedback";
 import { OperatorAppProvider } from "@/context/operatorAppContext";
 import "../../global.css";
 
@@ -13,6 +14,7 @@ export default function RootLayout() {
           <Stack.Screen name="chat/[conversationId]" options={{ headerShown: false }} />
           <Stack.Screen name="+not-found" options={{ headerShown: false }} />
         </Stack>
+        <GlobalErrorFeedback />
       </OperatorAppProvider>
     </SafeAreaProvider>
   );

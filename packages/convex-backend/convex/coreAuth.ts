@@ -51,7 +51,7 @@ export async function findSessionByToken(db: DbLike, sessionToken: string) {
 export async function requireSession(db: DbLike, sessionToken: string): Promise<SessionContext> {
   const storedSession = await findSessionByToken(db, sessionToken);
   if (!storedSession) {
-    throwBusinessError("UNAUTHENTICATED", "Your session is invalid or has expired.", {
+    throwBusinessError("UNAUTHENTICATED", "Sua sessao e invalida ou expirou. Faca login novamente.", {
       sessionToken,
     });
   }
@@ -62,7 +62,7 @@ export async function requireSession(db: DbLike, sessionToken: string): Promise<
   ]);
 
   if (!user || !account) {
-    throwBusinessError("UNAUTHENTICATED", "Your session is invalid or has expired.", {
+    throwBusinessError("UNAUTHENTICATED", "Sua sessao e invalida ou expirou. Faca login novamente.", {
       sessionToken,
       userId: storedSession.userId,
     });
@@ -73,7 +73,7 @@ export async function requireSession(db: DbLike, sessionToken: string): Promise<
     account.role !== storedSession.role ||
     account.userId !== storedSession.userId
   ) {
-    throwBusinessError("UNAUTHENTICATED", "Your session is invalid or has expired.", {
+    throwBusinessError("UNAUTHENTICATED", "Sua sessao e invalida ou expirou. Faca login novamente.", {
       sessionToken,
       userId: storedSession.userId,
       tenantId: storedSession.tenantId,
@@ -82,7 +82,7 @@ export async function requireSession(db: DbLike, sessionToken: string): Promise<
   }
 
   if (!account.isActive) {
-    throwBusinessError("FORBIDDEN", "This user is disabled.", {
+    throwBusinessError("FORBIDDEN", "Este usuario esta desativado.", {
       userId: user.userId,
       username: account.username,
     });
@@ -99,7 +99,7 @@ export async function requireSession(db: DbLike, sessionToken: string): Promise<
 
 export function requireSuperadmin(session: SessionContext): SessionContext {
   if (session.role !== "superadmin") {
-    throwBusinessError("FORBIDDEN", "You do not have permission to access this resource.", {
+    throwBusinessError("FORBIDDEN", "Voce nao tem permissao para acessar este recurso.", {
       role: session.role,
       tenantId: session.tenantId,
     });
@@ -112,7 +112,7 @@ export function assertTenantAccess(session: SessionContext, tenantId: string): s
     return tenantId;
   }
 
-  throwBusinessError("FORBIDDEN", "You do not have permission to access this tenant.", {
+  throwBusinessError("FORBIDDEN", "Voce nao tem permissao para acessar este tenant.", {
     sessionTenantId: session.tenantId,
     requestedTenantId: tenantId,
     role: session.role,
@@ -121,7 +121,7 @@ export function assertTenantAccess(session: SessionContext, tenantId: string): s
 
 export async function revokeSessionsByUserId(db: DbLike, userId: string): Promise<number> {
   if (!db.delete) {
-    throwBusinessError("BAD_REQUEST", "Session revocation requires write access to the database.");
+    throwBusinessError("BAD_REQUEST", "A revogacao de sessao exige acesso de escrita ao banco de dados.");
   }
 
   const sessions = await db

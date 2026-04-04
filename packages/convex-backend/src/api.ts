@@ -373,6 +373,16 @@ export const api = {
       { sessionToken: string; conversationId: string },
       { conversationId: string; updatedCount: number }
     >("chatDomain:markConversationAsRead"),
+    clearConversationChat: makeFunctionReference<
+      "mutation",
+      { sessionToken: string; conversationId: string },
+      {
+        conversationId: string;
+        removedMessageCount: number;
+        removedAttachmentCount: number;
+        removedHandoffEventCount: number;
+      }
+    >("chatDomain:clearConversationChat"),
     getContactProfileWithEvents: makeFunctionReference<
       "query",
       { sessionToken: string; contactId: string },
