@@ -117,7 +117,6 @@ const BLOCKING_MESSAGES = new Set([
 ]);
 const DOSSIER_NOT_FOUND_PATTERN =
   /(dossie|dossier|contact profile|perfil do contato|conversation archive|arquivo compactado).*(nao encontrado|not found)|(nao encontrado|not found).*(dossie|dossier|contact profile|conversation archive)/i;
-const CONVERSATION_ARCHIVE_NOT_FOUND_PATTERN = /conversation archive not found/i;
 
 export function translateErrorMessage(message: string): string {
   const normalized = message.trim();
