@@ -36,13 +36,6 @@ vi.mock("config", () => ({
 }));
 
 vi.mock("utils", () => ({
-  bytesToBase64: () => "YmFzZTY0",
-  createDossierExportFiles: () => ({
-    zipFileName: "dossie.zip",
-    zipBytes: new Uint8Array([1, 2, 3]),
-    pdfFileName: "dossie.pdf",
-    pdfBytes: new Uint8Array([4, 5, 6]),
-  }),
   resolveThreadMessageOrigin: () => "operator",
   shouldRenderMessageOnRight: () => true,
 }));
@@ -205,6 +198,16 @@ describe("Chat route", () => {
       sendMessage: vi.fn(),
       takeHandoff: vi.fn(),
       setConversationTriageResult: setConversationTriageResultMock,
+      exportConversationAttachmentArchive: vi.fn(async () => ({
+        conversationId: "c-1",
+        tenantId: "tenant-1",
+        formatVersion: "conversation.attachments.zip.v1",
+        generatedAtIso: "2026-01-01T00:00:00.000Z",
+        zipFileName: "arquivos-conversa-c-1.zip",
+        zipDownloadUrl: "https://storage.example.com/arquivos-conversa-c-1.zip",
+        attachmentCount: 1,
+        attachments: [],
+      })),
       loadingThread: false,
       loadingAction: false,
       errorMessage: null,
@@ -253,6 +256,14 @@ describe("Chat route", () => {
     expect(screen.queryByText("Enviar")).toBeNull();
     expect(screen.getByRole("button", { name: "Enviar mensagem" })).toBeDefined();
     expect(screen.getByTestId("icon-send")).toBeDefined();
+  });
+
+  it("does not render a PDF export action", () => {
+    mockAuthenticatedContext();
+
+    const screen = render(<ChatScreen />);
+
+    expect(screen.queryByText("Compartilhar PDF")).toBeNull();
   });
 
   it("starts at latest messages and allows jumping back to the end after scrolling up", async () => {

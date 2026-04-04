@@ -15,7 +15,7 @@ const takeConversationHandoffRef = makeFunctionReference<"action">("chatHandoffN
 const sendConversationMessageRef = makeFunctionReference<"action">("chatHandoffNode:sendConversationMessage");
 const setConversationTriageResultRef = makeFunctionReference<"mutation">("chatDomain:setConversationTriageResult");
 const closeConversationWithReasonRef = makeFunctionReference<"mutation">("chatDomain:closeConversationWithReason");
-const exportConversationDossierRef = makeFunctionReference<"mutation">("chatDomain:exportConversationDossier");
+const exportConversationAttachmentArchiveRef = makeFunctionReference<"action">("chatDomain:exportConversationAttachmentArchive");
 const listConversationAuditLogsRef = makeFunctionReference<"query">("testing:listConversationAuditLogs");
 
 const whatsappAccessToken = "wa_test_access_token";
@@ -56,10 +56,13 @@ async function expectBusinessError(promise: Promise<unknown>, code: string) {
     await promise;
     throw new Error("Expected promise to reject with business error.");
   } catch (error) {
-    const payload =
-      typeof (error as { data?: unknown }).data === "string"
-        ? JSON.parse((error as { data: string }).data)
-        : (error as { data?: unknown }).data;
+    let payload = (error as { data?: unknown }).data;
+    if (typeof payload === "string") {
+      payload = JSON.parse(payload);
+      if (typeof payload === "string") {
+        payload = JSON.parse(payload);
+      }
+    }
 
     expect(payload).toMatchObject({ code });
   }
@@ -406,7 +409,7 @@ describe("Convex tenant operator workspace flows", () => {
     expect(thread.triageResult).toBe("N_A");
   });
 
-  it("closes conversation with reason and persists closure in dossier export", async () => {
+  it("closes conversation with reason and generates attachment archive zip", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "ana.lima", "Ana@123456");
 
@@ -419,23 +422,23 @@ describe("Convex tenant operator workspace flows", () => {
     expect(closeResult.conversationStatus).toBe("FECHADO");
     expect(closeResult.closureReason).toBe("Documentacao validada e caso concluido");
 
-    const exportResult = await t.mutation(exportConversationDossierRef, {
+    const exportResult = await t.action(exportConversationAttachmentArchiveRef, {
       sessionToken: session.sessionToken,
       conversationId: "conv_ana_caio",
     });
-    expect(exportResult.formatVersion).toBe("dossie.v1");
-    expect(exportResult.closureReason).toBe("Documentacao validada e caso concluido");
+    expect(exportResult.formatVersion).toBe("conversation.attachments.zip.v1");
+    expect(exportResult.zipFileName).toBe("arquivos-conversa-conv_ana_caio.zip");
+    expect(exportResult.zipDownloadUrl.length).toBeGreaterThan(0);
+    expect(exportResult.attachmentCount).toBeGreaterThanOrEqual(1);
     expect(exportResult.attachments.length).toBeGreaterThanOrEqual(1);
-    expect(exportResult.messages.length).toBeGreaterThanOrEqual(1);
-    expect(exportResult.handoffEvents.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("blocks dossier export for users from another tenant", async () => {
+  it("blocks contact profile export for users from another tenant", async () => {
     const t = await createSeededTestContext();
     const clinicSession = await loginAs(t, "bruna.alves", "Bruna@123456");
 
     await expectBusinessError(
-      t.mutation(exportConversationDossierRef, {
+      t.action(exportConversationAttachmentArchiveRef, {
         sessionToken: clinicSession.sessionToken,
         conversationId: "conv_ana_caio",
       }),

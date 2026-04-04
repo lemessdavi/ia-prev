@@ -24,7 +24,7 @@ export type Message = {
   time: string
 }
 
-export type Dossier = {
+export type ContactSummaryMock = {
   name: string
   phone: string
   city: string
@@ -37,7 +37,7 @@ export type TenantWorkspaceMocks = {
   tenant: TenantWorkspace
   conversations: Conversation[]
   messages: Message[]
-  dossier: Dossier
+  contactSummary: ContactSummaryMock
 }
 
 const defaultTenantWorkspace: TenantWorkspace = {
@@ -68,7 +68,7 @@ export function createTenantWorkspaceMocks(tenantOverrides: Partial<TenantWorksp
       { id: 'm2', from: 'client', text: 'Sim, concordo.', time: '09:31' },
       { id: 'm3', from: 'agent', text: 'Obrigada. Por favor, envie uma foto do laudo médico ou descreva o acidente.', time: '09:32' }
     ],
-    dossier: {
+    contactSummary: {
       name: 'Carlos Mendes',
       phone: '+55 11 99999-8888',
       city: 'São Paulo, SP',
@@ -84,4 +84,4 @@ const defaultWorkspaceMocks = createTenantWorkspaceMocks()
 export const tenant = defaultWorkspaceMocks.tenant
 export const conversations = defaultWorkspaceMocks.conversations
 export const messages = defaultWorkspaceMocks.messages
-export const dossier = defaultWorkspaceMocks.dossier
+export const contactSummary = defaultWorkspaceMocks.contactSummary

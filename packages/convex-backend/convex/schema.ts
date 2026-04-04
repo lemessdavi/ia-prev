@@ -139,7 +139,8 @@ export default defineSchema({
     messageId: v.optional(v.string()),
     fileName: v.string(),
     contentType: v.string(),
-    url: v.string(),
+    url: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
   })
     .index("by_attachment_id", ["attachmentId"])
@@ -170,8 +171,8 @@ export default defineSchema({
     .index("by_audit_log_id", ["auditLogId"])
     .index("by_tenant_id_and_created_at", ["tenantId", "createdAt"]),
 
-  dossiers: defineTable({
-    dossierId: v.string(),
+  contactProfiles: defineTable({
+    contactProfileId: v.string(),
     tenantId: v.string(),
     contactId: v.string(),
     role: v.string(),
@@ -182,7 +183,7 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_tenant_id_and_contact_id", ["tenantId", "contactId"]),
 
-  dossierEvents: defineTable({
+  contactProfileEvents: defineTable({
     eventId: v.string(),
     tenantId: v.string(),
     contactId: v.string(),

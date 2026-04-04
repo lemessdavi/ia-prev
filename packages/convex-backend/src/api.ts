@@ -124,6 +124,7 @@ export type ConversationThreadAttachment = {
   fileName: string;
   contentType: string;
   url: string;
+  storageId?: string;
 };
 
 export type HandoffEvent = {
@@ -156,7 +157,7 @@ export type ConversationThreadPayload = {
   handoffEvents: HandoffEvent[];
 };
 
-export type Dossier = {
+export type ContactProfile = {
   id: string;
   tenantId: string;
   contactId: string;
@@ -168,7 +169,7 @@ export type Dossier = {
   updatedAt: number;
 };
 
-export type DossierEvent = {
+export type ContactProfileEvent = {
   id: string;
   tenantId: string;
   contactId: string;
@@ -186,23 +187,19 @@ export type Attachment = {
   fileName: string;
   contentType: string;
   url: string;
+  storageId?: string;
   createdAt: number;
 };
 
-export type ConversationDossierExport = {
-  formatVersion: "dossie.v1";
+export type ConversationAttachmentArchiveExport = {
+  formatVersion: "conversation.attachments.zip.v1";
   tenantId: string;
   conversationId: string;
-  conversationStatus: ConversationStatus;
-  triageResult: TriageResult;
-  contactId: string;
   generatedAtIso: string;
-  dossier: Dossier;
-  recentEvents: DossierEvent[];
-  messages: Message[];
+  zipFileName: string;
+  zipDownloadUrl: string;
+  attachmentCount: number;
   attachments: Attachment[];
-  handoffEvents: HandoffEvent[];
-  closureReason?: string;
 };
 
 export const api = {
@@ -355,11 +352,11 @@ export const api = {
       { sessionToken: string; conversationId: string },
       ConversationTriage | null
     >("triageEngine:getConversationTriage"),
-    exportConversationDossier: makeFunctionReference<
-      "mutation",
+    exportConversationAttachmentArchive: makeFunctionReference<
+      "action",
       { sessionToken: string; conversationId: string },
-      ConversationDossierExport
-    >("chatDomain:exportConversationDossier"),
+      ConversationAttachmentArchiveExport
+    >("chatDomain:exportConversationAttachmentArchive"),
     listConversationsWithUnreadBadge: makeFunctionReference<"query", { sessionToken: string }, ConversationListItem[]>(
       "chatDomain:listConversationsWithUnreadBadge",
     ),
@@ -376,11 +373,11 @@ export const api = {
       { sessionToken: string; conversationId: string },
       { conversationId: string; updatedCount: number }
     >("chatDomain:markConversationAsRead"),
-    getContactDossierWithEvents: makeFunctionReference<
+    getContactProfileWithEvents: makeFunctionReference<
       "query",
       { sessionToken: string; contactId: string },
-      { contactId: string; dossier: Dossier; recentEvents: DossierEvent[] }
-    >("chatDomain:getContactDossierWithEvents"),
+      { contactId: string; contactProfile: ContactProfile; recentEvents: ContactProfileEvent[] }
+    >("chatDomain:getContactProfileWithEvents"),
     getWorkspaceSnapshot: makeFunctionReference<
       "query",
       { sessionToken: string },
@@ -388,7 +385,7 @@ export const api = {
         tenant: { tenantId: string; tenantName: string; wabaLabel: string; activeAiProfileName: string };
         conversations: ConversationListItem[];
         messages: Message[];
-        dossier: Dossier | null;
+        contactProfile: ContactProfile | null;
       }
     >("chatDomain:getWorkspaceSnapshot"),
   },

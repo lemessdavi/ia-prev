@@ -2,7 +2,7 @@ import { assertTenantAccess, requirePersistedSession } from "./auth";
 import { BackendError, logInfo } from "./errors";
 import { InMemoryBackendStore } from "./store";
 import type {
-  ConversationDossierExport,
+  ConversationAttachmentArchiveExport,
   ConversationInboxItem,
   ConversationListItem,
   ConversationThreadMessageAttachment,
@@ -39,7 +39,7 @@ export function listConversationsWithUnreadBadge(input: {
   return result;
 }
 
-export function getContactDossierWithEvents(input: {
+export function getContactProfileWithEvents(input: {
   session?: Session | null;
   contactId: string;
   store: InMemoryBackendStore;
@@ -47,15 +47,15 @@ export function getContactDossierWithEvents(input: {
   const session = requirePersistedSession({ session: input.session, store: input.store });
   const contactId = assertId(input.contactId, "contactId");
   if (!input.store.findUser(session.userId, session.tenantId)) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+    throw new BackendError("Contact profile not found for this contact.", "NOT_FOUND", {
       tenantId: session.tenantId,
       contactId,
     });
   }
 
-  const dossier = input.store.findDossier(contactId, session.tenantId);
-  if (!dossier) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+  const contactProfile = input.store.findContactProfile(contactId, session.tenantId);
+  if (!contactProfile) {
+    throw new BackendError("Contact profile not found for this contact.", "NOT_FOUND", {
       contactId,
       tenantId: session.tenantId,
     });
@@ -65,18 +65,18 @@ export function getContactDossierWithEvents(input: {
     session.userId === contactId ||
     input.store.hasConversationWithContact(session.userId, contactId, session.tenantId);
   if (!canAccess) {
-    throw new BackendError("Dossier not found for this contact.", "NOT_FOUND", {
+    throw new BackendError("Contact profile not found for this contact.", "NOT_FOUND", {
       contactId,
       tenantId: session.tenantId,
     });
   }
 
-  const events = input.store.listDossierEvents(contactId, session.tenantId).slice(0, 5);
-  logInfo("Dossier fetched.", { tenantId: session.tenantId, userId: session.userId, contactId, events: events.length });
+  const events = input.store.listContactProfileEvents(contactId, session.tenantId).slice(0, 5);
+  logInfo("Contact profile fetched.", { tenantId: session.tenantId, userId: session.userId, contactId, events: events.length });
 
   return {
     contactId,
-    dossier,
+    contactProfile,
     recentEvents: events,
   };
 }
@@ -218,12 +218,12 @@ export function getConversationThread(input: {
   };
 }
 
-export function exportConversationDossier(input: {
+export function exportConversationAttachmentArchive(input: {
   session?: Session | null;
   store: InMemoryBackendStore;
   conversationId: string;
   now?: number;
-}): ConversationDossierExport {
+}): ConversationAttachmentArchiveExport {
   const session = requirePersistedSession({ session: input.session, store: input.store });
   const conversationId = assertId(input.conversationId, "conversationId");
   const conversation = input.store.findConversation(conversationId, session.tenantId);
@@ -234,41 +234,30 @@ export function exportConversationDossier(input: {
     });
   }
 
-  const contactId = resolveContactId(conversation.participantIds, session.userId);
-  const dossier = input.store.findDossier(contactId, session.tenantId);
-  if (!dossier) {
-    throw new BackendError("Dossier not found for this conversation.", "NOT_FOUND", {
-      tenantId: session.tenantId,
-      conversationId,
-      contactId,
-    });
-  }
-
   const now = input.now ?? Date.now();
+  const attachments = input.store.listAttachments(conversationId, session.tenantId);
+  const zipFileName = `arquivos-conversa-${conversationId}.zip`;
+  const zipDownloadUrl = `https://cdn.iaprev.com/archives/${encodeURIComponent(zipFileName)}`;
+
   input.store.insertAuditLog({
-    id: `audit_dossier_export_${conversationId}_${now}`,
+    id: `audit_attachment_archive_export_${conversationId}_${now}`,
     tenantId: session.tenantId,
     actorUserId: session.userId,
-    action: "dossier.exported",
+    action: "conversation.attachments_zip_exported",
     targetType: "conversation",
     targetId: conversationId,
     createdAt: now,
   });
 
   return {
-    formatVersion: "dossie.v1",
+    formatVersion: "conversation.attachments.zip.v1",
     tenantId: session.tenantId,
     conversationId,
-    conversationStatus: conversation.conversationStatus,
-    triageResult: conversation.triageResult,
-    contactId,
     generatedAtIso: new Date(now).toISOString(),
-    dossier,
-    recentEvents: input.store.listDossierEvents(contactId, session.tenantId).slice(0, 10),
-    messages: input.store.listMessages(conversationId, session.tenantId),
-    attachments: input.store.listAttachments(conversationId, session.tenantId),
-    handoffEvents: input.store.listHandoffEvents(conversationId, session.tenantId),
-    closureReason: conversation.closureReason,
+    zipFileName,
+    zipDownloadUrl,
+    attachmentCount: attachments.length,
+    attachments,
   };
 }
 

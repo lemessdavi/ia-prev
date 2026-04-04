@@ -110,7 +110,7 @@ Required screens/actions:
 1. Create initial tenant: `Lemes Advocacia Previdenciaria`.
 2. Attach current operational users to this tenant.
 3. Map current WABA integration to this tenant.
-4. Keep existing user-facing flow behavior unchanged (triage -> handoff -> case dossier).
+4. Keep existing user-facing flow behavior unchanged (triage -> handoff -> case arquivos da conversar).
 
 ## 7. Risks and mitigations
 

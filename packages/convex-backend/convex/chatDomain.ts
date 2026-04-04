@@ -1,11 +1,13 @@
+import { makeFunctionReference } from "convex/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./server";
+import { action, internalMutation, internalQuery, mutation, query } from "./server";
 import {
   findUserByUserId,
   requireSession,
   toAttachment,
-  toDossier,
-  toDossierEvent,
+  toContactProfile,
+  toContactProfileEvent,
   toHandoffEvent,
   toMessage,
 } from "./coreAuth";
@@ -19,13 +21,13 @@ import {
   assertSearchTerm,
 } from "./coreInput";
 import {
-  conversationDossierExportValidator,
+  conversationAttachmentArchiveValidator,
   conversationInboxItemValidator,
   conversationListItemValidator,
   conversationStatusValidator,
   conversationThreadPayloadValidator,
-  dossierEventValidator,
-  dossierValidator,
+  contactProfileEventValidator,
+  contactProfileValidator,
   messageValidator,
   tenantWorkspaceSummaryValidator,
   triageResultValidator,
@@ -138,6 +140,218 @@ function toInlineAttachment(messageId: string, attachmentUrl?: string): {
     contentType,
     url: attachmentUrl,
   };
+}
+
+async function resolveAttachmentUrl(ctx: any, row: any): Promise<string> {
+  if (typeof row.storageId === "string") {
+    const storageUrl = await ctx.storage.getUrl(row.storageId);
+    if (storageUrl) {
+      return storageUrl;
+    }
+  }
+
+  if (typeof row.url === "string" && row.url.trim().length > 0) {
+    return row.url.trim();
+  }
+
+  throwBusinessError("NOT_FOUND", "Attachment download URL is unavailable.", {
+    attachmentId: row.attachmentId,
+    storageId: row.storageId,
+  });
+}
+
+async function toThreadAttachment(ctx: any, row: any) {
+  return {
+    id: row.attachmentId,
+    fileName: row.fileName,
+    contentType: row.contentType,
+    url: await resolveAttachmentUrl(ctx, row),
+    storageId: row.storageId,
+  };
+}
+
+function normalizeArchiveBaseName(conversationId: string): string {
+  const normalized = conversationId.trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
+  const safeConversationId = normalized.replace(/-+/g, "-").replace(/^-|-$/g, "") || "conversa";
+  return `arquivos-conversa-${safeConversationId}`;
+}
+
+function normalizeAttachmentFileName(fileName: string, index: number): string {
+  const normalized = fileName.trim().replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ");
+  if (normalized.length > 0) {
+    return normalized.slice(0, 180);
+  }
+  return `arquivo-${index + 1}.bin`;
+}
+
+function dedupeArchiveFileName(fileName: string, usedNames: Set<string>): string {
+  if (!usedNames.has(fileName)) {
+    usedNames.add(fileName);
+    return fileName;
+  }
+
+  const extensionIndex = fileName.lastIndexOf(".");
+  const hasExtension = extensionIndex > 0 && extensionIndex < fileName.length - 1;
+  const base = hasExtension ? fileName.slice(0, extensionIndex) : fileName;
+  const extension = hasExtension ? fileName.slice(extensionIndex) : "";
+
+  let counter = 2;
+  while (true) {
+    const candidate = `${base}-${counter}${extension}`;
+    if (!usedNames.has(candidate)) {
+      usedNames.add(candidate);
+      return candidate;
+    }
+    counter += 1;
+  }
+}
+
+type ArchiveZipEntry = {
+  name: string;
+  bytes: Uint8Array;
+  modifiedAt: Date;
+};
+
+const ARCHIVE_CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let j = 0; j < 8; j += 1) {
+      value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+function archiveCrc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const value of bytes) {
+    crc = (crc >>> 8) ^ ARCHIVE_CRC32_TABLE[(crc ^ value) & 0xff]!;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeArchiveUint16LE(buffer: Uint8Array, offset: number, value: number): void {
+  buffer[offset] = value & 0xff;
+  buffer[offset + 1] = (value >>> 8) & 0xff;
+}
+
+function writeArchiveUint32LE(buffer: Uint8Array, offset: number, value: number): void {
+  buffer[offset] = value & 0xff;
+  buffer[offset + 1] = (value >>> 8) & 0xff;
+  buffer[offset + 2] = (value >>> 16) & 0xff;
+  buffer[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function toDosDateTime(value: Date): { dosDate: number; dosTime: number } {
+  const year = Math.max(1980, value.getFullYear());
+  const month = value.getMonth() + 1;
+  const day = value.getDate();
+  const hours = value.getHours();
+  const minutes = value.getMinutes();
+  const seconds = Math.floor(value.getSeconds() / 2);
+
+  const dosDate = ((year - 1980) << 9) | (month << 5) | day;
+  const dosTime = (hours << 11) | (minutes << 5) | seconds;
+  return { dosDate, dosTime };
+}
+
+function concatArchiveBytes(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function createAttachmentArchiveZip(entries: ArchiveZipEntry[]): Uint8Array {
+  const encoder = new TextEncoder();
+  const localSections: Uint8Array[] = [];
+  const centralSections: Uint8Array[] = [];
+  let currentOffset = 0;
+
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name);
+    const crc = archiveCrc32(entry.bytes);
+    const { dosDate, dosTime } = toDosDateTime(entry.modifiedAt);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    writeArchiveUint32LE(localHeader, 0, 0x04034b50);
+    writeArchiveUint16LE(localHeader, 4, 20);
+    writeArchiveUint16LE(localHeader, 6, 0x0800);
+    writeArchiveUint16LE(localHeader, 8, 0);
+    writeArchiveUint16LE(localHeader, 10, dosTime);
+    writeArchiveUint16LE(localHeader, 12, dosDate);
+    writeArchiveUint32LE(localHeader, 14, crc);
+    writeArchiveUint32LE(localHeader, 18, entry.bytes.length);
+    writeArchiveUint32LE(localHeader, 22, entry.bytes.length);
+    writeArchiveUint16LE(localHeader, 26, nameBytes.length);
+    writeArchiveUint16LE(localHeader, 28, 0);
+    localHeader.set(nameBytes, 30);
+    localSections.push(localHeader, entry.bytes);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    writeArchiveUint32LE(centralHeader, 0, 0x02014b50);
+    writeArchiveUint16LE(centralHeader, 4, 20);
+    writeArchiveUint16LE(centralHeader, 6, 20);
+    writeArchiveUint16LE(centralHeader, 8, 0x0800);
+    writeArchiveUint16LE(centralHeader, 10, 0);
+    writeArchiveUint16LE(centralHeader, 12, dosTime);
+    writeArchiveUint16LE(centralHeader, 14, dosDate);
+    writeArchiveUint32LE(centralHeader, 16, crc);
+    writeArchiveUint32LE(centralHeader, 20, entry.bytes.length);
+    writeArchiveUint32LE(centralHeader, 24, entry.bytes.length);
+    writeArchiveUint16LE(centralHeader, 28, nameBytes.length);
+    writeArchiveUint16LE(centralHeader, 30, 0);
+    writeArchiveUint16LE(centralHeader, 32, 0);
+    writeArchiveUint16LE(centralHeader, 34, 0);
+    writeArchiveUint16LE(centralHeader, 36, 0);
+    writeArchiveUint32LE(centralHeader, 38, 0);
+    writeArchiveUint32LE(centralHeader, 42, currentOffset);
+    centralHeader.set(nameBytes, 46);
+    centralSections.push(centralHeader);
+
+    currentOffset += localHeader.length + entry.bytes.length;
+  }
+
+  const localBytes = concatArchiveBytes(localSections);
+  const centralBytes = concatArchiveBytes(centralSections);
+
+  const end = new Uint8Array(22);
+  writeArchiveUint32LE(end, 0, 0x06054b50);
+  writeArchiveUint16LE(end, 4, 0);
+  writeArchiveUint16LE(end, 6, 0);
+  writeArchiveUint16LE(end, 8, entries.length);
+  writeArchiveUint16LE(end, 10, entries.length);
+  writeArchiveUint32LE(end, 12, centralBytes.length);
+  writeArchiveUint32LE(end, 16, localBytes.length);
+  writeArchiveUint16LE(end, 20, 0);
+
+  return concatArchiveBytes([localBytes, centralBytes, end]);
+}
+
+async function loadAttachmentBytesForArchive(ctx: any, row: any): Promise<Uint8Array | null> {
+  if (typeof row.storageId === "string") {
+    const blob = await ctx.storage.get(row.storageId);
+    if (blob) {
+      return new Uint8Array(await blob.arrayBuffer());
+    }
+  }
+
+  if (typeof row.url !== "string" || row.url.trim().length === 0) {
+    return null;
+  }
+
+  const response = await fetch(row.url).catch(() => null);
+  if (!response || !response.ok) {
+    return null;
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 async function listConversationsForSession(db: any, session: SessionShape) {
@@ -392,28 +606,25 @@ export const getConversationThread = query({
       attachments.filter((row: any) => typeof row.messageId === "string").map((row: any) => [row.messageId, row]),
     );
 
-    const threadMessages = messages.map((message: any) => {
-      const linkedAttachment = attachmentsByMessageId.get(message.messageId);
-      const inlineAttachment = toInlineAttachment(message.messageId, message.attachmentUrl);
-      const attachment =
-        linkedAttachment && typeof linkedAttachment.messageId === "string"
-          ? {
-              id: linkedAttachment.attachmentId,
-              fileName: linkedAttachment.fileName,
-              contentType: linkedAttachment.contentType,
-              url: linkedAttachment.url,
-            }
-          : inlineAttachment;
+    const threadMessages = await Promise.all(
+      messages.map(async (message: any) => {
+        const linkedAttachment = attachmentsByMessageId.get(message.messageId);
+        const inlineAttachment = toInlineAttachment(message.messageId, message.attachmentUrl);
+        const attachment =
+          linkedAttachment && typeof linkedAttachment.messageId === "string"
+            ? await toThreadAttachment(ctx, linkedAttachment)
+            : inlineAttachment;
 
-      return {
-        id: message.messageId,
-        senderId: message.senderId,
-        body: message.body,
-        createdAt: message.createdAt,
-        readBy: message.readBy,
-        attachment: attachment ?? undefined,
-      };
-    });
+        return {
+          id: message.messageId,
+          senderId: message.senderId,
+          body: message.body,
+          createdAt: message.createdAt,
+          readBy: message.readBy,
+          attachment: attachment ?? undefined,
+        };
+      }),
+    );
 
     return {
       conversationId: conversation.conversationId,
@@ -960,101 +1171,194 @@ export const setConversationTriageResult = mutation({
   },
 });
 
-export const exportConversationDossier = mutation({
+type AttachmentArchiveSourceRow = {
+  attachmentId: string;
+  tenantId: string;
+  conversationId: string;
+  messageId?: string;
+  fileName: string;
+  contentType: string;
+  url?: string;
+  storageId?: Id<"_storage">;
+  createdAt: number;
+};
+
+type AttachmentArchiveSource = {
+  tenantId: string;
+  userId: string;
+  conversationId: string;
+  attachments: AttachmentArchiveSourceRow[];
+};
+
+const getConversationAttachmentArchiveSourceRef = makeFunctionReference<"query">("chatDomain:getConversationAttachmentArchiveSource");
+const recordConversationAttachmentArchiveExportRef = makeFunctionReference<"mutation">("chatDomain:recordConversationAttachmentArchiveExport");
+
+const attachmentArchiveSourceRowValidator = v.object({
+  attachmentId: v.string(),
+  tenantId: v.string(),
+  conversationId: v.string(),
+  messageId: v.optional(v.string()),
+  fileName: v.string(),
+  contentType: v.string(),
+  url: v.optional(v.string()),
+  storageId: v.optional(v.id("_storage")),
+  createdAt: v.number(),
+});
+
+export const getConversationAttachmentArchiveSource = internalQuery({
   args: {
     sessionToken: v.string(),
     conversationId: v.string(),
   },
-  returns: conversationDossierExportValidator,
+  returns: v.object({
+    tenantId: v.string(),
+    userId: v.string(),
+    conversationId: v.string(),
+    attachments: v.array(attachmentArchiveSourceRowValidator),
+  }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);
     const conversationId = assertId(args.conversationId, "conversationId");
-    const now = Date.now();
 
-    const conversation = await requireTenantConversation(ctx.db, {
+    await requireTenantConversation(ctx.db, {
       tenantId: session.tenantId,
       conversationId,
     });
 
-    const contactId = resolveContactId(conversation.participantIds, session.userId);
-    const dossierRow = await ctx.db
-      .query("dossiers")
-      .withIndex("by_tenant_id_and_contact_id", (q: any) => q.eq("tenantId", session.tenantId).eq("contactId", contactId))
-      .unique();
-
-    if (!dossierRow) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this conversation.", {
-        tenantId: session.tenantId,
-        conversationId,
-        contactId,
-      });
-    }
-
-    await ctx.db.insert("auditLogs", {
-      auditLogId: `audit_dossier_export_${conversationId}_${now}_${crypto.randomUUID()}`,
-      tenantId: session.tenantId,
-      actorUserId: session.userId,
-      action: "dossier.exported",
-      targetType: "conversation",
-      targetId: conversationId,
-      createdAt: now,
-    });
-
-    const [recentEventsRows, messageRows, attachmentRows, handoffRows] = await Promise.all([
-      ctx.db
-        .query("dossierEvents")
-        .withIndex("by_tenant_id_and_contact_id_and_occurred_at", (q: any) =>
-          q.eq("tenantId", session.tenantId).eq("contactId", contactId),
-        )
-        .order("desc")
-        .take(10),
-      ctx.db
-        .query("messages")
-        .withIndex("by_tenant_id_and_conversation_id_and_created_at", (q: any) =>
-          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
-        )
-        .collect(),
-      ctx.db
-        .query("attachments")
-        .withIndex("by_tenant_id_and_conversation_id", (q: any) =>
-          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
-        )
-        .collect(),
-      ctx.db
-        .query("handoffEvents")
-        .withIndex("by_tenant_id_and_conversation_id_and_created_at", (q: any) =>
-          q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
-        )
-        .collect(),
-    ]);
+    const attachments = await ctx.db
+      .query("attachments")
+      .withIndex("by_tenant_id_and_conversation_id", (q: any) =>
+        q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
+      )
+      .collect();
 
     return {
-      formatVersion: "dossie.v1" as const,
       tenantId: session.tenantId,
+      userId: session.userId,
       conversationId,
-      conversationStatus: conversation.conversationStatus,
-      triageResult: conversation.triageResult,
-      contactId,
-      generatedAtIso: new Date(now).toISOString(),
-      dossier: toDossier(dossierRow),
-      recentEvents: recentEventsRows.map((row: any) => toDossierEvent(row)),
-      messages: messageRows.map((row: any) => toMessage(row)),
-      attachments: attachmentRows.map((row: any) => toAttachment(row)),
-      handoffEvents: handoffRows.map((row: any) => toHandoffEvent(row)),
-      closureReason: conversation.closureReason,
+      attachments: attachments.map((row: any) => ({
+        attachmentId: row.attachmentId,
+        tenantId: row.tenantId,
+        conversationId: row.conversationId,
+        messageId: row.messageId,
+        fileName: row.fileName,
+        contentType: row.contentType,
+        url: row.url,
+        storageId: row.storageId,
+        createdAt: row.createdAt,
+      })),
     };
   },
 });
 
-export const getContactDossierWithEvents = query({
+export const recordConversationAttachmentArchiveExport = internalMutation({
+  args: {
+    tenantId: v.string(),
+    userId: v.string(),
+    conversationId: v.string(),
+    createdAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_attachment_archive_export_${args.conversationId}_${args.createdAt}_${crypto.randomUUID()}`,
+      tenantId: args.tenantId,
+      actorUserId: args.userId,
+      action: "conversation.attachments_zip_exported",
+      targetType: "conversation",
+      targetId: args.conversationId,
+      createdAt: args.createdAt,
+    });
+
+    return null;
+  },
+});
+
+export const exportConversationAttachmentArchive = action({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+  },
+  returns: conversationAttachmentArchiveValidator,
+  handler: async (ctx, args) => {
+    const source: AttachmentArchiveSource = await ctx.runQuery(getConversationAttachmentArchiveSourceRef, {
+      sessionToken: args.sessionToken,
+      conversationId: args.conversationId,
+    });
+    const now = Date.now();
+
+    const usedEntryNames = new Set<string>();
+    const zipEntries: ArchiveZipEntry[] = [];
+    const attachments = await Promise.all(
+      source.attachments.map(async (row: AttachmentArchiveSourceRow, index: number) => {
+        const downloadUrl = await resolveAttachmentUrl(ctx, row);
+        const bytes = await loadAttachmentBytesForArchive(ctx, row);
+
+        if (bytes && bytes.length > 0) {
+          const entryName = dedupeArchiveFileName(normalizeAttachmentFileName(row.fileName, index), usedEntryNames);
+          zipEntries.push({
+            name: entryName,
+            bytes,
+            modifiedAt: new Date(row.createdAt),
+          });
+        }
+
+        return {
+          id: row.attachmentId,
+          tenantId: row.tenantId,
+          conversationId: row.conversationId,
+          messageId: row.messageId,
+          fileName: row.fileName,
+          contentType: row.contentType,
+          url: downloadUrl,
+          storageId: row.storageId,
+          createdAt: row.createdAt,
+        };
+      }),
+    );
+
+    const zipBytes = createAttachmentArchiveZip(zipEntries);
+    const zipArrayBuffer = zipBytes.buffer.slice(zipBytes.byteOffset, zipBytes.byteOffset + zipBytes.byteLength) as ArrayBuffer;
+    const zipStorageId = await ctx.storage.store(new Blob([zipArrayBuffer], { type: "application/zip" }));
+    const zipDownloadUrl = await ctx.storage.getUrl(zipStorageId);
+    if (!zipDownloadUrl) {
+      throwBusinessError("NOT_FOUND", "Unable to generate download URL for attachment archive.", {
+        conversationId: source.conversationId,
+      });
+    }
+
+    const baseName = normalizeArchiveBaseName(source.conversationId);
+    const zipFileName = `${baseName}.zip`;
+
+    await ctx.runMutation(recordConversationAttachmentArchiveExportRef, {
+      tenantId: source.tenantId,
+      userId: source.userId,
+      conversationId: source.conversationId,
+      createdAt: now,
+    });
+
+    return {
+      formatVersion: "conversation.attachments.zip.v1" as const,
+      tenantId: source.tenantId,
+      conversationId: source.conversationId,
+      generatedAtIso: new Date(now).toISOString(),
+      zipFileName,
+      zipDownloadUrl,
+      attachmentCount: attachments.length,
+      attachments,
+    };
+  },
+});
+
+export const getContactProfileWithEvents = query({
   args: {
     sessionToken: v.string(),
     contactId: v.string(),
   },
   returns: v.object({
     contactId: v.string(),
-    dossier: dossierValidator,
-    recentEvents: v.array(dossierEventValidator),
+    contactProfile: contactProfileValidator,
+    recentEvents: v.array(contactProfileEventValidator),
   }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);
@@ -1062,18 +1366,18 @@ export const getContactDossierWithEvents = query({
 
     const requestingUser = await findUserByUserId(ctx.db, session.userId);
     if (!requestingUser || requestingUser.tenantId !== session.tenantId) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+      throwBusinessError("NOT_FOUND", "Contact profile not found for this contact.", {
         tenantId: session.tenantId,
         contactId,
       });
     }
 
-    const dossier = await ctx.db
-      .query("dossiers")
+    const contactProfile = await ctx.db
+      .query("contactProfiles")
       .withIndex("by_tenant_id_and_contact_id", (q: any) => q.eq("tenantId", session.tenantId).eq("contactId", contactId))
       .unique();
-    if (!dossier) {
-      throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+    if (!contactProfile) {
+      throwBusinessError("NOT_FOUND", "Contact profile not found for this contact.", {
         tenantId: session.tenantId,
         contactId,
       });
@@ -1100,7 +1404,7 @@ export const getContactDossierWithEvents = query({
       }
 
       if (!canAccess) {
-        throwBusinessError("NOT_FOUND", "Dossier not found for this contact.", {
+        throwBusinessError("NOT_FOUND", "Contact profile not found for this contact.", {
           tenantId: session.tenantId,
           contactId,
         });
@@ -1108,7 +1412,7 @@ export const getContactDossierWithEvents = query({
     }
 
     const recentEvents = await ctx.db
-      .query("dossierEvents")
+      .query("contactProfileEvents")
       .withIndex("by_tenant_id_and_contact_id_and_occurred_at", (q: any) =>
         q.eq("tenantId", session.tenantId).eq("contactId", contactId),
       )
@@ -1117,8 +1421,8 @@ export const getContactDossierWithEvents = query({
 
     return {
       contactId,
-      dossier: toDossier(dossier),
-      recentEvents: recentEvents.map((event: any) => toDossierEvent(event)),
+      contactProfile: toContactProfile(contactProfile),
+      recentEvents: recentEvents.map((event: any) => toContactProfileEvent(event)),
     };
   },
 });
@@ -1136,7 +1440,7 @@ export const getWorkspaceSnapshot = query({
     }),
     conversations: v.array(conversationListItemValidator),
     messages: v.array(messageValidator),
-    dossier: v.union(dossierValidator, v.null()),
+    contactProfile: v.union(contactProfileValidator, v.null()),
   }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx.db, args.sessionToken);
@@ -1166,7 +1470,7 @@ export const getWorkspaceSnapshot = query({
     const firstConversation = conversations[0]?.conversation ?? null;
 
     let messages: ReturnType<typeof toMessage>[] = [];
-    let dossier: ReturnType<typeof toDossier> | null = null;
+    let contactProfile: ReturnType<typeof toContactProfile> | null = null;
 
     if (firstConversation) {
       const messageRows = await ctx.db
@@ -1179,11 +1483,11 @@ export const getWorkspaceSnapshot = query({
 
       const contactId = firstConversation.participantIds.find((participantId: string) => participantId !== session.userId);
       if (contactId) {
-        const dossierRow = await ctx.db
-          .query("dossiers")
+        const profileRow = await ctx.db
+          .query("contactProfiles")
           .withIndex("by_tenant_id_and_contact_id", (q: any) => q.eq("tenantId", session.tenantId).eq("contactId", contactId))
           .unique();
-        dossier = dossierRow ? toDossier(dossierRow) : null;
+        contactProfile = profileRow ? toContactProfile(profileRow) : null;
       }
     }
 
@@ -1196,7 +1500,7 @@ export const getWorkspaceSnapshot = query({
       },
       conversations: conversations.map((row) => row.item),
       messages,
-      dossier,
+      contactProfile,
     };
   },
 });

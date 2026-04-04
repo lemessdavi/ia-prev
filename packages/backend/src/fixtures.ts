@@ -188,7 +188,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       conversationStatus: "PENDENTE_HUMANO" as const,
       triageResult: "APTO" as const,
       title: "Caio Nunes",
-      lastMessagePreview: "Te envio o dossiê atualizado hoje.",
+      lastMessagePreview: "Te envio os arquivos atualizados hoje.",
       lastMessageAt: now - 60000,
       lastActivityAt: now - 60000,
       createdAt: now - 500000,
@@ -271,7 +271,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       tenantId: "tenant_legal",
       conversationId: "conv_ana_caio",
       senderId: "usr_ana",
-      body: "Sim, estou finalizando o dossiê.",
+      body: "Sim, estou finalizando os arquivos.",
       createdAt: now - 120000,
       readBy: ["usr_ana", "usr_caio"],
     },
@@ -280,7 +280,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
       tenantId: "tenant_legal",
       conversationId: "conv_ana_caio",
       senderId: "usr_caio",
-      body: "Te envio o dossiê atualizado hoje.",
+      body: "Te envio os arquivos atualizados hoje.",
       createdAt: now - 60000,
       readBy: ["usr_caio"],
     },
@@ -313,7 +313,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
     },
   ];
 
-  const dossiers = [
+  const contactProfiles = [
     {
       id: "dos_caio",
       tenantId: "tenant_legal",
@@ -338,7 +338,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
     },
   ];
 
-  const dossierEvents = [
+  const contactProfileEvents = [
     {
       id: "evt_1",
       tenantId: "tenant_legal",
@@ -380,7 +380,7 @@ export function createPrototypeAlignedFixtures(now = Date.now()): Database {
     attachments,
     handoffEvents,
     auditLogs,
-    dossiers,
-    dossierEvents,
+    contactProfiles,
+    contactProfileEvents,
   };
 }

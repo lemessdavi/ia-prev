@@ -138,7 +138,7 @@ export interface AuditLog {
   createdAt: number;
 }
 
-export interface DossierEvent {
+export interface ContactProfileEvent {
   id: Id;
   tenantId: TenantId;
   contactId: Id;
@@ -148,7 +148,7 @@ export interface DossierEvent {
   type: "interaction" | "status" | "note";
 }
 
-export interface Dossier {
+export interface ContactProfile {
   id: Id;
   tenantId: TenantId;
   contactId: Id;
@@ -172,8 +172,8 @@ export interface Database {
   attachments: Attachment[];
   handoffEvents: HandoffEvent[];
   auditLogs: AuditLog[];
-  dossiers: Dossier[];
-  dossierEvents: DossierEvent[];
+  contactProfiles: ContactProfile[];
+  contactProfileEvents: ContactProfileEvent[];
 }
 
 export interface ConversationListItem {
@@ -238,18 +238,13 @@ export interface ConversationThreadPayload {
   handoffEvents: HandoffEvent[];
 }
 
-export interface ConversationDossierExport {
-  formatVersion: "dossie.v1";
+export interface ConversationAttachmentArchiveExport {
+  formatVersion: "conversation.attachments.zip.v1";
   tenantId: TenantId;
   conversationId: Id;
-  conversationStatus: ConversationStatus;
-  triageResult: TriageResult;
-  contactId: Id;
   generatedAtIso: string;
-  dossier: Dossier;
-  recentEvents: DossierEvent[];
-  messages: Message[];
+  zipFileName: string;
+  zipDownloadUrl: string;
+  attachmentCount: number;
   attachments: Attachment[];
-  handoffEvents: HandoffEvent[];
-  closureReason?: string;
 }

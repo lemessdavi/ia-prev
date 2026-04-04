@@ -100,7 +100,7 @@ Criterio de saida:
 
 Entregas:
 - App carrega contexto do tenant autenticado (nome cliente, IA ativa, conta WABA vinculada).
-- Lista de conversas/chat/dossie consultando APIs tenant-aware.
+- Lista de conversas/chat/arquivos da conversa consultando APIs tenant-aware.
 - Sem alteracao de comportamento de negocio do fluxo atual (triagem/handoff).
 
 Criterio de saida:

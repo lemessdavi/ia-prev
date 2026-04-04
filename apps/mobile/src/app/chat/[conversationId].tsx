@@ -6,7 +6,7 @@ import * as FileSystemLegacy from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
-import { bytesToBase64, createDossierExportFiles, resolveThreadMessageOrigin, shouldRenderMessageOnRight, type TriageResult } from "utils";
+import { resolveThreadMessageOrigin, shouldRenderMessageOnRight, type TriageResult } from "utils";
 import { useOperatorApp } from "@/context/operatorAppContext";
 
 const CHAT_BOTTOM_THRESHOLD_PX = 72;
@@ -27,7 +27,7 @@ export default function ChatScreen() {
     sendMessage,
     takeHandoff,
     setConversationTriageResult,
-    exportDossier,
+    exportConversationAttachmentArchive,
     loadingThread,
     loadingAction,
     errorMessage,
@@ -91,29 +91,14 @@ export default function ChatScreen() {
 
   async function handleShareZip() {
     if (!canActOnConversation) return;
-    const payload = await exportDossier();
+    const payload = await exportConversationAttachmentArchive();
     if (!payload) return;
 
     setShareError(null);
     try {
-      const files = createDossierExportFiles(payload);
-      await shareBinaryFile(files.zipFileName, files.zipBytes, "application/zip");
+      await shareDownloadedFile(payload.zipDownloadUrl, payload.zipFileName);
     } catch (error) {
       setShareError(error instanceof Error ? error.message : "Falha ao compartilhar ZIP.");
-    }
-  }
-
-  async function handleSharePdf() {
-    if (!canActOnConversation) return;
-    const payload = await exportDossier();
-    if (!payload) return;
-
-    setShareError(null);
-    try {
-      const files = createDossierExportFiles(payload);
-      await shareBinaryFile(files.pdfFileName, files.pdfBytes, "application/pdf");
-    } catch (error) {
-      setShareError(error instanceof Error ? error.message : "Falha ao compartilhar PDF.");
     }
   }
 
@@ -186,21 +171,7 @@ export default function ChatScreen() {
                   opacity: canActOnConversation ? 1 : 0.6,
                 }}
               >
-                <Text>Compartilhar ZIP</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => void handleSharePdf()}
-                disabled={!canActOnConversation}
-                style={{
-                  borderWidth: 1,
-                  borderColor: tokens.colors.border,
-                  borderRadius: 10,
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
-                  opacity: canActOnConversation ? 1 : 0.6,
-                }}
-              >
-                <Text>Compartilhar PDF</Text>
+                <Text>Compartilhar ZIP de anexos</Text>
               </Pressable>
             </View>
           </View>
@@ -431,7 +402,7 @@ function toTriageLabel(result: string): string {
   }
 }
 
-async function shareBinaryFile(fileName: string, bytes: Uint8Array, mimeType: string) {
+async function shareDownloadedFile(fileUrl: string, fileName: string) {
   const sharingAvailable = await Sharing.isAvailableAsync();
   if (!sharingAvailable) {
     throw new Error("Compartilhamento nao disponivel neste dispositivo.");
@@ -443,12 +414,10 @@ async function shareBinaryFile(fileName: string, bytes: Uint8Array, mimeType: st
   }
 
   const fileUri = `${directory}${fileName}`;
-  await FileSystemLegacy.writeAsStringAsync(fileUri, bytesToBase64(bytes), {
-    encoding: FileSystemLegacy.EncodingType.Base64,
-  });
+  const download = await FileSystemLegacy.downloadAsync(fileUrl, fileUri);
 
-  await Sharing.shareAsync(fileUri, {
-    mimeType,
+  await Sharing.shareAsync(download.uri, {
+    mimeType: "application/zip",
     dialogTitle: `Exportar ${fileName}`,
   });
 }

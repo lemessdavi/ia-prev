@@ -78,7 +78,7 @@ export type ConversationThreadPayloadDTO = {
   handoffEvents: HandoffEventDTO[];
 };
 
-export type DossierDTO = {
+export type ContactProfileDTO = {
   id: string;
   tenantId: string;
   contactId: string;
@@ -90,7 +90,7 @@ export type DossierDTO = {
   updatedAt: number;
 };
 
-export type DossierEventDTO = {
+export type ContactProfileEventDTO = {
   id: string;
   tenantId: string;
   contactId: string;
@@ -108,6 +108,7 @@ export type AttachmentDTO = {
   fileName: string;
   contentType: string;
   url: string;
+  storageId?: string;
   createdAt: number;
 };
 
@@ -122,20 +123,15 @@ export type MessageDTO = {
   readBy: string[];
 };
 
-export type DossierExportDTO = {
-  formatVersion: "dossie.v1";
+export type ConversationAttachmentArchiveDTO = {
+  formatVersion: "conversation.attachments.zip.v1";
   tenantId: string;
   conversationId: string;
-  conversationStatus: ConversationStatus;
-  triageResult: TriageResult;
-  contactId: string;
   generatedAtIso: string;
-  dossier: DossierDTO;
-  recentEvents: DossierEventDTO[];
-  messages: MessageDTO[];
+  zipFileName: string;
+  zipDownloadUrl: string;
+  attachmentCount: number;
   attachments: AttachmentDTO[];
-  handoffEvents: HandoffEventDTO[];
-  closureReason?: string;
 };
 
 export type BackendApiError = {

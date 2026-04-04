@@ -21,7 +21,7 @@ Dependencia de documentacao:
 | Reproducao/visualizacao/download de audio, imagem e PDF | RF-04 | Parcial: anexos sao persistidos pela ingestao (`IAP-20`), sem superficie de consumo no front | Expor anexos na thread + CTA abrir/baixar por canal |
 | Handoff e continuidade humana | RF-05 | Parcial: existe `handoff_events` no modelo, sem mutation operacional | Criar mutation de handoff (`assistant -> human`) com auditoria |
 | Painel de conversas com listagem, busca e filtros | RF-06 | Nao atendido no contrato atual (`listConversationsWithUnreadBadge` sem status/filtro) | Nova query com filtros de status e busca tenant-aware |
-| Exportar dossie | RF-07 | Parcial: dossie existe em query de contato, sem fluxo de exportacao | Criar query de exportacao minima e acao de download/compartilhamento |
+| Exportar arquivos da conversa | RF-07 | Parcial: arquivos da conversa existe em query de contato, sem fluxo de exportacao | Criar query de exportacao minima e acao de download/compartilhamento |
 | Encerrar caso com motivo | RF-10 | Nao atendido | Criar mutation para fechamento com motivo + log de auditoria |
 
 ## 3) Dependencias e blockers antes da codificacao
@@ -31,7 +31,7 @@ Dependencia de documentacao:
 1. Nao existe query publica para obter mensagens/anexos por conversa tenant-aware.
 2. Nao existe mutation para handoff operacional.
 3. Nao existe mutation para encerramento com motivo.
-4. Nao existe query para exportacao minima de dossie por conversa.
+4. Nao existe query para exportacao minima de arquivos da conversa por conversa.
 5. Nao existe query de lista de conversas com busca/filtro por status.
 
 ### 3.2 Dependencia externa de documentacao (nao bloqueante para codar)
@@ -48,7 +48,7 @@ Dependencia de documentacao:
   - thread de conversa (mensagens, anexos e historico de handoff);
   - handoff da conversa;
   - encerramento com motivo;
-  - exportacao minima de dossie.
+  - exportacao minima de arquivos da conversa.
 - Garantir isolamento tenant-aware em todas as operacoes.
 - Adicionar testes de integracao cobrindo:
   - bloqueio cross-tenant;
@@ -65,7 +65,7 @@ Dependencia de documentacao:
   - lista, busca e filtro de conversas;
   - thread e anexos;
   - handoff;
-  - exportacao de dossie;
+  - exportacao de arquivos da conversa;
   - encerramento com motivo.
 - Implementar estados `loading`, `empty` e `error`.
 
@@ -73,7 +73,7 @@ Dependencia de documentacao:
 
 - Remover dependencia de mocks compartilhados.
 - Implementar login/sessao real e resolver tenant autenticado.
-- Consumir mesmo contrato tenant-aware para conversas/chat/dossie.
+- Consumir mesmo contrato tenant-aware para conversas/chat/arquivos da conversa.
 - Implementar handoff, anexos, exportacao minima e encerramento com motivo.
 - Implementar estados `loading`, `empty` e `error`.
 
@@ -85,6 +85,6 @@ Dependencia de documentacao:
   - listar/buscar/filtrar conversas;
   - abrir thread e anexos;
   - assumir handoff;
-  - exportar dossie;
+  - exportar arquivos da conversa;
   - encerrar caso com motivo.
 - Testes automatizados atualizados e verdes para os contratos novos.

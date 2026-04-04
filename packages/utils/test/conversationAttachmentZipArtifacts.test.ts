@@ -22,6 +22,8 @@ test("creates deterministic zip file names for conversation attachments", () => 
 
   assert.equal(files.baseName, "arquivos-conversa-conv_ana_caio");
   assert.equal(files.zipFileName, "arquivos-conversa-conv_ana_caio.zip");
+  assert.equal("pdfFileName" in (files as Record<string, unknown>), false);
+  assert.equal("pdfBytes" in (files as Record<string, unknown>), false);
 });
 
 test("packages only the attachment files inside zip", () => {

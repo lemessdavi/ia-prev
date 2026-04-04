@@ -8,6 +8,7 @@ const bridgeAttachmentValidator = v.object({
   fileName: v.optional(v.string()),
   mediaType: v.optional(v.string()),
   mediaId: v.optional(v.string()),
+  storageId: v.optional(v.id("_storage")),
 });
 
 const bridgePersistResultValidator = v.object({
@@ -24,6 +25,7 @@ type BridgeAttachment = {
   fileName?: string;
   mediaType?: string;
   mediaId?: string;
+  storageId?: string;
 };
 
 function asNonEmptyString(value: string | undefined): string | undefined {
@@ -249,7 +251,7 @@ async function persistAttachmentRows(ctx: any, input: {
   for (let index = 0; index < input.attachments.length; index += 1) {
     const attachment = input.attachments[index]!;
     const url = resolveAttachmentUrl(attachment);
-    if (!url) {
+    if (!url && !attachment.storageId) {
       continue;
     }
 
@@ -261,7 +263,8 @@ async function persistAttachmentRows(ctx: any, input: {
       messageId: input.messageId,
       fileName: inferFileName(attachment, fallbackId),
       contentType: inferContentType(attachment),
-      url,
+      url: url ?? undefined,
+      storageId: attachment.storageId,
       createdAt: input.createdAt,
     });
   }

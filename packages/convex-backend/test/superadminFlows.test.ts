@@ -16,7 +16,7 @@ const createAiProfileRef = makeFunctionReference<"mutation">("aiProfiles:createA
 const setActiveAiProfileRef = makeFunctionReference<"mutation">("aiProfiles:setActiveAiProfile");
 const listConversationsRef = makeFunctionReference<"query">("chatDomain:listConversationsWithUnreadBadge");
 const markConversationAsReadRef = makeFunctionReference<"mutation">("chatDomain:markConversationAsRead");
-const getDossierRef = makeFunctionReference<"query">("chatDomain:getContactDossierWithEvents");
+const getContactProfileRef = makeFunctionReference<"query">("chatDomain:getContactProfileWithEvents");
 
 async function createSeededTestContext() {
   const t = convexTest(schema, modules);
@@ -179,12 +179,12 @@ describe("Convex superadmin and tenant contract", () => {
     expect(after.find((row: { conversationId: string; unreadCount: number }) => row.conversationId === "conv_ana_caio")?.unreadCount).toBe(0);
   });
 
-  it("returns NOT_FOUND for dossier access without conversation relationship", async () => {
+  it("returns NOT_FOUND for contact profile access without conversation relationship", async () => {
     const t = await createSeededTestContext();
     const session = await loginAs(t, "marina.rocha", "Marina@123456");
 
     await expectBusinessError(
-      t.query(getDossierRef, {
+      t.query(getContactProfileRef, {
         sessionToken: session.sessionToken,
         contactId: "usr_caio",
       }),

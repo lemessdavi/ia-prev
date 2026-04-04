@@ -222,8 +222,8 @@ export function toMessage(row: {
   };
 }
 
-export function toDossier(row: {
-  dossierId: string;
+export function toContactProfile(row: {
+  contactProfileId: string;
   tenantId: string;
   contactId: string;
   role: string;
@@ -234,7 +234,7 @@ export function toDossier(row: {
   updatedAt: number;
 }) {
   return {
-    id: row.dossierId,
+    id: row.contactProfileId,
     tenantId: row.tenantId,
     contactId: row.contactId,
     role: row.role,
@@ -246,7 +246,7 @@ export function toDossier(row: {
   };
 }
 
-export function toDossierEvent(row: {
+export function toContactProfileEvent(row: {
   eventId: string;
   tenantId: string;
   contactId: string;
@@ -273,7 +273,8 @@ export function toAttachment(row: {
   messageId?: string;
   fileName: string;
   contentType: string;
-  url: string;
+  url?: string;
+  storageId?: string;
   createdAt: number;
 }) {
   return {
@@ -283,7 +284,8 @@ export function toAttachment(row: {
     messageId: row.messageId,
     fileName: row.fileName,
     contentType: row.contentType,
-    url: row.url,
+    url: row.url ?? "",
+    storageId: row.storageId,
     createdAt: row.createdAt,
   };
 }

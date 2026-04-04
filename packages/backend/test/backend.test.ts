@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import {
   BackendError,
   closeConversationWithReason,
-  exportConversationDossier,
+  exportConversationAttachmentArchive,
   InMemoryBackendStore,
   createPrototypeAlignedFixtures,
-  getContactDossierWithEvents,
+  getContactProfileWithEvents,
   getConversationThread,
   getTenantWorkspaceSummary,
   ingestWhatsAppWebhook,
@@ -128,11 +128,11 @@ test("list conversations returns unread badge", () => {
   assert.equal(rows[0]?.unreadCount, 2);
 });
 
-test("dossier query returns recent events", () => {
+test("contactProfile query returns recent events", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
-  const payload = getContactDossierWithEvents({ session: loginAsAna(store), contactId: "usr_caio", store });
+  const payload = getContactProfileWithEvents({ session: loginAsAna(store), contactId: "usr_caio", store });
 
-  assert.equal(payload.dossier.contactId, "usr_caio");
+  assert.equal(payload.contactProfile.contactId, "usr_caio");
   assert.equal(payload.recentEvents.length, 2);
   assert.equal(payload.recentEvents[0]?.id, "evt_2");
 });
@@ -249,7 +249,7 @@ test("forged session without persisted record is rejected", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   assert.throws(
     () =>
-      getContactDossierWithEvents({
+      getContactProfileWithEvents({
         session: {
           sessionId: "sess_forged",
           userId: "usr_ana",
@@ -802,11 +802,11 @@ test("closing case requires reason and writes conversation/audit updates", () =>
   );
 });
 
-test("dossier export returns operational bundle and blocks cross-tenant access", () => {
+test("conversation attachment archive export returns zip metadata and blocks cross-tenant access", () => {
   const store = new InMemoryBackendStore(createPrototypeAlignedFixtures(1_000_000));
   const legalSession = loginAsAna(store);
 
-  const exported = exportConversationDossier({
+  const exported = exportConversationAttachmentArchive({
     session: legalSession,
     store,
     conversationId: "conv_ana_caio",
@@ -815,15 +815,19 @@ test("dossier export returns operational bundle and blocks cross-tenant access",
 
   assert.equal(exported.conversationId, "conv_ana_caio");
   assert.equal(exported.tenantId, "tenant_legal");
-  assert.equal(exported.dossier.contactId, "usr_caio");
-  assert.equal(exported.formatVersion, "dossie.v1");
-  assert.ok(exported.messages.length >= 1);
+  assert.equal(exported.formatVersion, "conversation.attachments.zip.v1");
+  assert.equal(exported.zipFileName, "arquivos-conversa-conv_ana_caio.zip");
+  assert.ok(exported.zipDownloadUrl.includes("arquivos-conversa-conv_ana_caio.zip"));
+  assert.equal(exported.attachmentCount, exported.attachments.length);
   assert.ok(exported.attachments.length >= 1);
   assert.ok(exported.generatedAtIso.includes("T"));
+  const exportedRecord = exported as unknown as Record<string, unknown>;
+  assert.equal("pdfFileName" in exportedRecord, false);
+  assert.equal("pdfBytes" in exportedRecord, false);
 
   assert.throws(
     () =>
-      exportConversationDossier({
+      exportConversationAttachmentArchive({
         session: loginAsBruna(store),
         store,
         conversationId: "conv_ana_caio",

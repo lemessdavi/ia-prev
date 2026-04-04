@@ -22,6 +22,23 @@ const autoReplyResultValidator = v.object({
   }),
 });
 
+const inboundAttachmentValidator = v.object({
+  url: v.optional(v.string()),
+  contentType: v.optional(v.string()),
+  fileName: v.optional(v.string()),
+  mediaType: v.optional(v.string()),
+  mediaId: v.optional(v.string()),
+});
+
+const hydratedAttachmentValidator = v.object({
+  url: v.optional(v.string()),
+  contentType: v.optional(v.string()),
+  fileName: v.optional(v.string()),
+  mediaType: v.optional(v.string()),
+  mediaId: v.optional(v.string()),
+  storageId: v.optional(v.id("_storage")),
+});
+
 const persistOutboundMessageRef = makeFunctionReference<"mutation">("whatsappBridge:persistOutboundMessage");
 
 function asNonEmptyString(value: unknown): string | undefined {
@@ -40,6 +57,152 @@ function normalizeInboundText(body: string | undefined, messageType: string | un
   }
 
   return `[${asNonEmptyString(messageType) ?? "text"}]`;
+}
+
+function inferAttachmentContentType(input: { contentType?: string; mediaType?: string }): string {
+  const normalized = asNonEmptyString(input.contentType);
+  if (normalized) {
+    return normalized;
+  }
+
+  switch (input.mediaType) {
+    case "image":
+      return "image/jpeg";
+    case "audio":
+      return "audio/ogg";
+    case "video":
+      return "video/mp4";
+    case "document":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function inferAttachmentFileName(input: { fileName?: string; mediaType?: string; mediaId?: string; contentType?: string }): string {
+  const provided = asNonEmptyString(input.fileName);
+  if (provided) {
+    return provided;
+  }
+
+  const contentType = inferAttachmentContentType(input);
+  const extension = contentType.includes("/") ? contentType.split("/")[1] : "bin";
+  const suffix = asNonEmptyString(input.mediaId) ?? String(Date.now());
+  return `${input.mediaType ?? "arquivo"}_${suffix}.${extension}`;
+}
+
+function getMediaAuthConfig():
+  | {
+      accessToken: string;
+      graphVersion: string;
+      graphBaseUrl: string;
+    }
+  | null {
+  const accessToken = asNonEmptyString(process.env.WHATSAPP_CLOUD_ACCESS_TOKEN);
+  if (!accessToken) {
+    return null;
+  }
+
+  return {
+    accessToken,
+    graphVersion: asNonEmptyString(process.env.WHATSAPP_GRAPH_VERSION) ?? "v22.0",
+    graphBaseUrl: (asNonEmptyString(process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL) ?? "https://graph.facebook.com").replace(/\/+$/, ""),
+  };
+}
+
+async function fetchMetaMediaDownloadUrl(input: { accessToken: string; graphVersion: string; graphBaseUrl: string; mediaId: string }) {
+  const endpoint = `${input.graphBaseUrl}/${input.graphVersion}/${encodeURIComponent(input.mediaId)}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as { url?: unknown; mime_type?: unknown; filename?: unknown };
+  return {
+    url: asNonEmptyString(typeof payload.url === "string" ? payload.url : undefined),
+    mimeType: asNonEmptyString(typeof payload.mime_type === "string" ? payload.mime_type : undefined),
+    fileName: asNonEmptyString(typeof payload.filename === "string" ? payload.filename : undefined),
+  };
+}
+
+async function fetchMediaBlob(input: { accessToken: string; url: string }) {
+  const response = await fetch(input.url, {
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+  return await response.blob();
+}
+
+async function hydrateInboundAttachment(ctx: any, attachment: {
+  url?: string;
+  contentType?: string;
+  fileName?: string;
+  mediaType?: string;
+  mediaId?: string;
+}) {
+  const mediaConfig = getMediaAuthConfig();
+  const fallbackUrl = asNonEmptyString(attachment.url);
+  let downloadUrl = fallbackUrl;
+  let contentType = asNonEmptyString(attachment.contentType);
+  let fileName = asNonEmptyString(attachment.fileName);
+
+  if (mediaConfig && attachment.mediaId) {
+    const metadata = await fetchMetaMediaDownloadUrl({
+      ...mediaConfig,
+      mediaId: attachment.mediaId,
+    }).catch(() => null);
+
+    if (metadata?.url) {
+      downloadUrl = metadata.url;
+    } else if (!downloadUrl) {
+      downloadUrl = `${mediaConfig.graphBaseUrl}/${mediaConfig.graphVersion}/${encodeURIComponent(attachment.mediaId)}`;
+    }
+
+    if (metadata?.mimeType && !contentType) {
+      contentType = metadata.mimeType;
+    }
+    if (metadata?.fileName && !fileName) {
+      fileName = metadata.fileName;
+    }
+
+    if (downloadUrl) {
+      const blob = await fetchMediaBlob({
+        accessToken: mediaConfig.accessToken,
+        url: downloadUrl,
+      }).catch(() => null);
+
+      if (blob) {
+        const safeContentType = contentType ?? inferAttachmentContentType({ contentType, mediaType: attachment.mediaType });
+        const safeFileName = fileName ?? inferAttachmentFileName({ ...attachment, contentType: safeContentType });
+        const storageId = await ctx.storage.store(blob);
+
+        return {
+          url: downloadUrl,
+          contentType: safeContentType,
+          fileName: safeFileName,
+          mediaType: attachment.mediaType,
+          mediaId: attachment.mediaId,
+          storageId,
+        };
+      }
+    }
+  }
+
+  return {
+    url: downloadUrl,
+    contentType: contentType ?? inferAttachmentContentType({ contentType, mediaType: attachment.mediaType }),
+    fileName: fileName ?? inferAttachmentFileName({ ...attachment, contentType }),
+    mediaType: attachment.mediaType,
+    mediaId: attachment.mediaId,
+  };
 }
 
 function mockReplyForInbound(inboundText: string): string {
@@ -244,5 +407,19 @@ export const autoReplyInboundMessage = internalAction({
         messageId: persistedOutbound.messageId,
       },
     };
+  },
+});
+
+export const hydrateInboundAttachments = internalAction({
+  args: {
+    attachments: v.array(inboundAttachmentValidator),
+  },
+  returns: v.array(hydratedAttachmentValidator),
+  handler: async (ctx, args) => {
+    const hydrated = [];
+    for (const attachment of args.attachments) {
+      hydrated.push(await hydrateInboundAttachment(ctx, attachment));
+    }
+    return hydrated;
   },
 });

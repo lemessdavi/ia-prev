@@ -11,6 +11,7 @@ const verifyWebhookVerifyTokenRef = makeFunctionReference<"action">("wabaWebhook
 const verifyWebhookSignatureRef = makeFunctionReference<"action">("wabaWebhookSecurityNode:verifyWebhookSignature");
 const persistInboundFromWebhookRef = makeFunctionReference<"mutation">("whatsappBridge:persistInboundFromWebhook");
 const autoReplyInboundMessageRef = makeFunctionReference<"action">("whatsappBridgeNode:autoReplyInboundMessage");
+const hydrateInboundAttachmentsRef = makeFunctionReference<"action">("whatsappBridgeNode:hydrateInboundAttachments");
 
 async function recordWabaAuditEvent(
   ctx: any,
@@ -305,7 +306,13 @@ http.route({
 
         for (const inboundMessage of inboundMessages) {
           try {
-            const persistedInbound = await ctx.runMutation(persistInboundFromWebhookRef, inboundMessage as any);
+            const hydratedAttachments = await ctx.runAction(hydrateInboundAttachmentsRef, {
+              attachments: inboundMessage.attachments,
+            });
+            const persistedInbound = await ctx.runMutation(persistInboundFromWebhookRef, {
+              ...inboundMessage,
+              attachments: hydratedAttachments,
+            } as any);
             if (persistedInbound.status === "duplicate") {
               continue;
             }

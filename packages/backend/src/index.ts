@@ -6,8 +6,8 @@ export {
   listConversationsForInbox,
   getTenantWorkspaceSummary,
   getConversationThread,
-  exportConversationDossier,
-  getContactDossierWithEvents,
+  exportConversationAttachmentArchive,
+  getContactProfileWithEvents,
   listUsers,
   resolveTenantByPhoneNumberId,
 } from "./queries";
