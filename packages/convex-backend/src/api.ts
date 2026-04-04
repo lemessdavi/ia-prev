@@ -330,7 +330,16 @@ export const api = {
     >("triageEngine:upsertTriageAnswers"),
     evaluateConversationTriage: makeFunctionReference<
       "mutation",
-      { sessionToken: string; conversationId: string },
+      {
+        sessionToken: string;
+        conversationId: string;
+        triageResult: Exclude<TriageResult, "N_A">;
+        flowType?: TriageFlow;
+        answers?: TriageAnswers;
+        reasons?: string[];
+        missingFields?: string[];
+        inconsistencies?: string[];
+      },
       ConversationTriage & { evaluatedAt: number }
     >("triageEngine:evaluateConversationTriage"),
     getConversationTriage: makeFunctionReference<
