@@ -32,10 +32,10 @@ export const schema = {
   auditLogs: {
     indexes: ["by_tenant_created_at"],
   },
-  dossiers: {
+  contactProfiles: {
     indexes: ["by_tenant_contact"],
   },
-  dossierEvents: {
+  contactProfileEvents: {
     indexes: ["by_tenant_contact_occurred_at"],
   },
 } as const;

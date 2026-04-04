@@ -3,14 +3,14 @@ export {
   tenant as legacyTenantMock,
   conversations as legacyConversationsMock,
   messages as legacyMessagesMock,
-  dossier as legacyDossierMock,
+  contactSummary as legacyContactSummaryMock,
   type TenantWorkspace,
   type Conversation as LegacyConversationMock,
   type Message as LegacyMessageMock,
-  type Dossier as LegacyDossierMock,
+  type ContactSummaryMock as LegacyContactSummaryMock,
   type TenantWorkspaceMocks,
 } from "./chatMocks";
 export * from "./backendApiTypes";
 export * from "./backendApiClient";
 export * from "./messagePresentation";
-export * from "./dossierExportArtifacts";
+export * from "./conversationAttachmentZipArtifacts";

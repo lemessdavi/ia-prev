@@ -2,9 +2,9 @@ import { api as convexApi } from "@repo/convex-backend";
 import { ConvexReactClient } from "convex/react";
 import type {
   BackendApiError,
+  ConversationAttachmentArchiveDTO,
   ConversationInboxItemDTO,
   ConversationThreadPayloadDTO,
-  DossierExportDTO,
   LoginResponse,
   TenantWorkspaceSummaryDTO,
   TriageResult,
@@ -47,7 +47,7 @@ export interface BackendApiClient {
   takeHandoff(conversationId: string): Promise<void>;
   closeConversation(conversationId: string, reason: string): Promise<void>;
   setConversationTriageResult(conversationId: string, triageResult: TriageResult): Promise<void>;
-  exportDossier(conversationId: string): Promise<DossierExportDTO>;
+  exportConversationAttachmentArchive(conversationId: string): Promise<ConversationAttachmentArchiveDTO>;
 }
 
 function getConvexClient(convexUrl: string): ConvexReactClient {
@@ -322,10 +322,10 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
         });
       });
     },
-    async exportDossier(conversationId) {
+    async exportConversationAttachmentArchive(conversationId) {
       return await execute(async () => {
         const client = getConvexClient(convexUrl);
-        return await client.mutation(convexApi.chat.exportConversationDossier, {
+        return await client.action(convexApi.chat.exportConversationAttachmentArchive, {
           sessionToken: requireSessionToken(),
           conversationId,
         });

@@ -10,7 +10,7 @@ Objetivo: validar os fluxos funcionais da integração tenant-aware em runtime C
 - inbox/thread/envio
 - handoff
 - fechamento com motivo
-- export de dossiê
+- export de arquivos da conversa
 - tenant isolation
 - webhook WABA com fail-closed e idempotência
 

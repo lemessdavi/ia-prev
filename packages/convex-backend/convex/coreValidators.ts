@@ -145,6 +145,7 @@ export const conversationThreadAttachmentValidator = v.object({
   fileName: v.string(),
   contentType: v.string(),
   url: v.string(),
+  storageId: v.optional(v.id("_storage")),
 });
 
 export const handoffEventValidator = v.object({
@@ -185,10 +186,11 @@ export const attachmentValidator = v.object({
   fileName: v.string(),
   contentType: v.string(),
   url: v.string(),
+  storageId: v.optional(v.id("_storage")),
   createdAt: v.number(),
 });
 
-export const dossierValidator = v.object({
+export const contactProfileValidator = v.object({
   id: v.string(),
   tenantId: v.string(),
   contactId: v.string(),
@@ -200,7 +202,7 @@ export const dossierValidator = v.object({
   updatedAt: v.number(),
 });
 
-export const dossierEventValidator = v.object({
+export const contactProfileEventValidator = v.object({
   id: v.string(),
   tenantId: v.string(),
   contactId: v.string(),
@@ -210,18 +212,13 @@ export const dossierEventValidator = v.object({
   type: v.union(v.literal("interaction"), v.literal("status"), v.literal("note")),
 });
 
-export const conversationDossierExportValidator = v.object({
-  formatVersion: v.literal("dossie.v1"),
+export const conversationAttachmentArchiveValidator = v.object({
+  formatVersion: v.literal("conversation.attachments.zip.v1"),
   tenantId: v.string(),
   conversationId: v.string(),
-  conversationStatus: conversationStatusValidator,
-  triageResult: triageResultValidator,
-  contactId: v.string(),
   generatedAtIso: v.string(),
-  dossier: dossierValidator,
-  recentEvents: v.array(dossierEventValidator),
-  messages: v.array(messageValidator),
+  zipFileName: v.string(),
+  zipDownloadUrl: v.string(),
+  attachmentCount: v.number(),
   attachments: v.array(attachmentValidator),
-  handoffEvents: v.array(handoffEventValidator),
-  closureReason: v.optional(v.string()),
 });

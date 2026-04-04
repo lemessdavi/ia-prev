@@ -1,13 +1,13 @@
-# RF-07 - Design de Definicao do Dossie e Export PDF/ZIP
+# RF-07 - Design de Definicao do arquivos da conversa e Export ZIP de anexos
 
 Date: 2026-04-02  
-Status: aprovado para implementacao na branch `lemes/dossie-pdf-zip-spec`
+Status: aprovado para implementacao na branch `lemes/arquivos da conversa-pdf-zip-spec`
 
 ## Contexto
 
-O fluxo atual exporta apenas JSON e o termo "Dossie" estava ambiguo.  
+O fluxo atual exporta apenas JSON e o termo "arquivos da conversa" estava ambiguo.  
 RF-07 pede:
-- definicao formal de Dossie nesta versao
+- definicao formal de arquivos da conversa nesta versao
 - export em PDF e ZIP
 - ajuste web/mobile para baixar/compartilhar no novo formato
 - compatibilidade minima com dados existentes
@@ -32,7 +32,7 @@ Adotada a abordagem 1.
 
 ## Design tecnico
 
-- Contrato de export recebe versao explicita: `formatVersion: "dossie.v1"`.
+- Contrato de export recebe versao explicita: `formatVersion: "arquivos da conversa.v1"`.
 - Contrato passa a incluir metadados de conversa (`conversationStatus`, `triageResult`) para remover ambiguidade de escopo.
 - `packages/utils` centraliza:
   - geracao de PDF de resumo legivel

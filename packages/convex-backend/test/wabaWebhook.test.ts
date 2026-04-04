@@ -9,6 +9,7 @@ const seedDemoDataRef = makeFunctionReference<"action">("seedNode:seedDemoData")
 const loginRef = makeFunctionReference<"action">("authNode:loginWithUsernamePassword");
 const listConversationsForInboxRef = makeFunctionReference<"query">("chatDomain:listConversationsForInbox");
 const getConversationThreadRef = makeFunctionReference<"query">("chatDomain:getConversationThread");
+const exportConversationAttachmentArchiveRef = makeFunctionReference<"action">("chatDomain:exportConversationAttachmentArchive");
 const upsertTenantWabaMappingRef = makeFunctionReference<"mutation">("wabaWebhook:upsertTenantWabaMapping");
 const listAuditByPhoneNumberRef = makeFunctionReference<"query">("testing:listAuditByPhoneNumber");
 const listTenantAttachmentsRef = makeFunctionReference<"query">("testing:listTenantAttachments");
@@ -349,6 +350,141 @@ describe("WABA webhook ingestion (Convex native)", () => {
     expect(tenantAAttachments).toHaveLength(1);
     expect(tenantAAttachments[0]?.mediaType).toBe("image");
     expect(tenantBAttachments).toHaveLength(0);
+  });
+
+  it("stores inbound media in storage and serves attachment download urls from storage", async () => {
+    const previousWhatsappToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+    const previousWhatsappApiVersion = process.env.WHATSAPP_CLOUD_API_VERSION;
+    const previousWhatsappGraphVersion = process.env.WHATSAPP_GRAPH_VERSION;
+    const previousWhatsappGraphBaseUrl = process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL;
+    const originalFetch = globalThis.fetch;
+
+    process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = "wa_media_storage_token";
+    process.env.WHATSAPP_CLOUD_API_VERSION = "v22.0";
+    process.env.WHATSAPP_GRAPH_VERSION = "v22.0";
+    process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL = "https://graph.facebook.com";
+
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url.includes("/v22.0/media-wamid-storage-1")) {
+        return new Response(
+          JSON.stringify({
+            url: "https://graph.facebook.com/media-download/wamid-storage-1",
+            mime_type: "image/jpeg",
+            filename: "foto-storage.jpg",
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      }
+
+      if (url === "https://graph.facebook.com/media-download/wamid-storage-1") {
+        return new Response(new Uint8Array([1, 2, 3, 4]), {
+          status: 200,
+          headers: {
+            "content-type": "image/jpeg",
+          },
+        });
+      }
+
+      if (url.includes("graph.facebook.com") && url.includes("/messages")) {
+        return new Response(
+          JSON.stringify({
+            messages: [{ id: "wamid.media.storage.reply.1" }],
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      }
+
+      return await originalFetch(input as any, init);
+    }) as typeof fetch;
+
+    try {
+      const t = convexTest(schema, modules);
+      await t.action(seedDemoDataRef, {});
+
+      const result = await postWebhook(
+        t,
+        buildInboundPayload({
+          phoneNumberId: "waba_phone_legal_1",
+          fromWaId: "5511999090909",
+          externalMessageId: "wamid-storage-1",
+          textBody: "segue imagem em anexo",
+          withImage: true,
+        }),
+      );
+
+      expect(result.response.status).toBe(200);
+      expect(result.body).toEqual({ processed: 1, duplicates: 0, blocked: 0, ignored: 0 });
+
+      const session = await t.action(loginRef, {
+        username: "ana.lima",
+        password: "Ana@123456",
+      });
+
+      const inbox = await t.query(listConversationsForInboxRef, {
+        sessionToken: session.sessionToken,
+        search: "contato de teste",
+      });
+      expect(inbox[0]?.conversationId).toBeTruthy();
+
+      const conversationId = inbox[0]!.conversationId;
+      const thread = await t.query(getConversationThreadRef, {
+        sessionToken: session.sessionToken,
+        conversationId,
+      });
+
+      const attachmentMessage = thread.messages.find(
+        (message: { attachment?: { fileName?: string } }) => message.attachment?.fileName === "foto-storage.jpg",
+      );
+      expect(attachmentMessage?.attachment?.storageId).toBeTruthy();
+      expect((attachmentMessage?.attachment?.url ?? "").length).toBeGreaterThan(0);
+
+      const archive = await t.action(exportConversationAttachmentArchiveRef, {
+        sessionToken: session.sessionToken,
+        conversationId,
+      });
+
+      expect(archive.attachmentCount).toBeGreaterThanOrEqual(1);
+      expect(archive.attachments.some((attachment: { storageId?: string }) => Boolean(attachment.storageId))).toBe(true);
+      expect(archive.zipDownloadUrl.length).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+
+      if (typeof previousWhatsappToken === "string") {
+        process.env.WHATSAPP_CLOUD_ACCESS_TOKEN = previousWhatsappToken;
+      } else {
+        delete process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+      }
+
+      if (typeof previousWhatsappApiVersion === "string") {
+        process.env.WHATSAPP_CLOUD_API_VERSION = previousWhatsappApiVersion;
+      } else {
+        delete process.env.WHATSAPP_CLOUD_API_VERSION;
+      }
+
+      if (typeof previousWhatsappGraphVersion === "string") {
+        process.env.WHATSAPP_GRAPH_VERSION = previousWhatsappGraphVersion;
+      } else {
+        delete process.env.WHATSAPP_GRAPH_VERSION;
+      }
+
+      if (typeof previousWhatsappGraphBaseUrl === "string") {
+        process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL = previousWhatsappGraphBaseUrl;
+      } else {
+        delete process.env.WHATSAPP_CLOUD_GRAPH_BASE_URL;
+      }
+    }
   });
 
   it("fails closed when phone_number_id is unknown and writes an audit trail", async () => {

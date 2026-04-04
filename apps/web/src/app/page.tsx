@@ -6,13 +6,12 @@ import { tokens } from "config";
 import { useQuery } from "convex/react";
 import {
   BackendApiClientError,
-  createDossierExportFiles,
   createBackendApiClient,
   formatConversationStatusLabel,
   resolveThreadMessageOrigin,
   shouldRenderMessageOnRight,
+  type ConversationAttachmentArchiveDTO,
   type ConversationStatus,
-  type DossierExportDTO,
   type TenantWorkspaceSummaryDTO,
   type TriageResult,
 } from "utils";
@@ -46,13 +45,13 @@ const statusOptions: Array<{ label: string; value: InboxFilter }> = [
 
 const CHAT_BOTTOM_THRESHOLD_PX = 72;
 
-type MobilePanel = "inbox" | "chat" | "dossier";
+type MobilePanel = "inbox" | "chat" | "files";
 
 export default function Home() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<TenantWorkspaceSummaryDTO | null>(null);
-  const [dossier, setDossier] = useState<DossierExportDTO | null>(null);
+  const [conversationAttachmentArchive, setConversationAttachmentArchive] = useState<ConversationAttachmentArchiveDTO | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("inbox");
 
@@ -66,7 +65,7 @@ export default function Home() {
   const [closureReason, setClosureReason] = useState("");
 
   const [authLoading, setAuthLoading] = useState(false);
-  const [loadingDossier, setLoadingDossier] = useState(false);
+  const [loadingConversationAttachmentArchive, setLoadingConversationAttachmentArchive] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [performingAction, setPerformingAction] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -127,7 +126,7 @@ export default function Home() {
       window.localStorage.removeItem(TOKEN_STORAGE_KEY);
     }
     setWorkspace(null);
-    setDossier(null);
+    setConversationAttachmentArchive(null);
     setSelectedConversationId(null);
     setMobilePanel("inbox");
   }, []);
@@ -149,16 +148,16 @@ export default function Home() {
     const data = await api.getWorkspace();
     setWorkspace(data);
   }, []);
-  const loadDossier = useCallback(
+  const loadConversationAttachmentArchive = useCallback(
     async (conversationId: string) => {
-      setLoadingDossier(true);
+      setLoadingConversationAttachmentArchive(true);
       try {
-        const data = await api.exportDossier(conversationId);
-        setDossier(data);
+        const data = await api.exportConversationAttachmentArchive(conversationId);
+        setConversationAttachmentArchive(data);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar dossie."));
+        setErrorMessage(toReadableError(error, "Falha ao carregar arquivos da conversa."));
       } finally {
-        setLoadingDossier(false);
+        setLoadingConversationAttachmentArchive(false);
       }
     },
     [toReadableError],
@@ -236,7 +235,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
-      setDossier(null);
+      setConversationAttachmentArchive(null);
       return;
     }
 
@@ -244,8 +243,8 @@ export default function Home() {
     void api.markConversationAsRead(selectedConversationId).catch((error: unknown) => {
       setErrorMessage(toReadableError(error, "Falha ao marcar conversa como lida."));
     });
-    void loadDossier(selectedConversationId);
-  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
+    void loadConversationAttachmentArchive(selectedConversationId);
+  }, [isAuthenticated, loadConversationAttachmentArchive, selectedConversationId, toReadableError]);
 
   useEffect(() => {
     setRetryMessageBody(null);
@@ -414,7 +413,7 @@ export default function Home() {
     try {
       await api.closeConversation(selectedConversationId, closureReason.trim());
       setClosureReason("");
-      await loadDossier(selectedConversationId);
+      await loadConversationAttachmentArchive(selectedConversationId);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao encerrar caso."));
     } finally {
@@ -422,33 +421,16 @@ export default function Home() {
     }
   }
 
-  async function handleExportDossierZip() {
+  async function handleExportConversationAttachmentArchiveZip() {
     if (!selectedConversationId) return;
     setPerformingAction(true);
     setErrorMessage(null);
     try {
-      const payload = await api.exportDossier(selectedConversationId);
-      setDossier(payload);
-      const files = createDossierExportFiles(payload);
-      downloadBytes(files.zipFileName, files.zipBytes, "application/zip");
+      const payload = await api.exportConversationAttachmentArchive(selectedConversationId);
+      setConversationAttachmentArchive(payload);
+      downloadFileFromUrl(payload.zipDownloadUrl, payload.zipFileName);
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie em ZIP."));
-    } finally {
-      setPerformingAction(false);
-    }
-  }
-
-  async function handleExportDossierPdf() {
-    if (!selectedConversationId) return;
-    setPerformingAction(true);
-    setErrorMessage(null);
-    try {
-      const payload = await api.exportDossier(selectedConversationId);
-      setDossier(payload);
-      const files = createDossierExportFiles(payload);
-      downloadBytes(files.pdfFileName, files.pdfBytes, "application/pdf");
-    } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie em PDF."));
+      setErrorMessage(toReadableError(error, "Falha ao exportar ZIP de anexos."));
     } finally {
       setPerformingAction(false);
     }
@@ -483,7 +465,7 @@ export default function Home() {
                 <h1 className="mt-5 max-w-sm text-4xl font-semibold leading-tight">Atendimento por IA com você sob controle.</h1>
               </div>
               <p className="max-w-sm text-sm text-blue-100">
-                Multiplataforma, avaliação de prospects, handoff, anexos e dossie operacional.
+                Multiplataforma, avaliação de prospects, handoff e exportacao ZIP de anexos.
               </p>
             </div>
           </section>
@@ -575,11 +557,11 @@ export default function Home() {
               Chat
             </button>
             <button
-              className={`rounded-lg px-3 py-2 text-sm ${mobilePanel === "dossier" ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"}`}
-              onClick={() => setMobilePanel("dossier")}
-              data-testid="mobile-tab-dossier"
+              className={`rounded-lg px-3 py-2 text-sm ${mobilePanel === "files" ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-700"}`}
+              onClick={() => setMobilePanel("files")}
+              data-testid="mobile-tab-files"
             >
-              Dossie
+              Arquivos
             </button>
           </div>
         </header>
@@ -805,14 +787,14 @@ export default function Home() {
             </section>
 
             <aside
-              className={`${mobilePanel === "dossier" ? "block" : "hidden"} h-full overflow-auto border-zinc-200 bg-white lg:col-span-3 lg:block`}
-              aria-label="Dossie e acoes do caso"
+              className={`${mobilePanel === "files" ? "block" : "hidden"} h-full overflow-auto border-zinc-200 bg-white lg:col-span-3 lg:block`}
+              aria-label="Arquivos da conversa e acoes do caso"
             >
               <div className="border-b border-zinc-200 p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-2xl font-semibold">Dossie do caso</h2>
+                  <h2 className="text-2xl font-semibold">Arquivos da conversa</h2>
                   {thread ? (
-                    <span className="rounded-md px-2 py-1 text-xs font-medium" data-testid="dossier-status-badge" style={statusStyles[thread.conversationStatus]}>
+                    <span className="rounded-md px-2 py-1 text-xs font-medium" data-testid="conversation-files-status-badge" style={statusStyles[thread.conversationStatus]}>
                       {formatConversationStatusLabel(thread.conversationStatus)}
                     </span>
                   ) : null}
@@ -821,34 +803,37 @@ export default function Home() {
 
               <div className="space-y-3 p-4">
                 <section className="rounded-xl border border-zinc-200 p-3">
-                  <h3 className="text-xs uppercase tracking-wider text-zinc-500">Dados do cliente</h3>
-                  {loadingDossier ? (
-                    <p className="mt-2 text-sm text-zinc-500" data-testid="dossier-loading-state">
-                      Carregando dossie...
+                  <h3 className="text-xs uppercase tracking-wider text-zinc-500">Resumo da exportacao</h3>
+                  {loadingConversationAttachmentArchive ? (
+                    <p className="mt-2 text-sm text-zinc-500" data-testid="conversation-files-loading-state">
+                      Carregando arquivos da conversa...
                     </p>
-                  ) : dossier ? (
+                  ) : conversationAttachmentArchive ? (
                     <>
-                      <p className="mt-3 text-lg font-semibold" data-testid="dossier-contact-id">
-                        {dossier.contactId}
+                      <p className="mt-3 text-lg font-semibold" data-testid="conversation-files-zip-name">
+                        {conversationAttachmentArchive.zipFileName}
                       </p>
-                      <p className="mt-1 text-sm text-zinc-600">{dossier.dossier.role}</p>
-                      <p className="mt-1 text-sm text-zinc-600">{dossier.dossier.location}</p>
-                      <p className="mt-3 text-sm">{dossier.dossier.summary}</p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        {conversationAttachmentArchive.attachmentCount} arquivo(s) pronto(s) para download.
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Gerado em {formatDateTime(Date.parse(conversationAttachmentArchive.generatedAtIso))}
+                      </p>
                     </>
                   ) : (
-                    <p className="mt-2 text-sm text-zinc-500">Selecione uma conversa para exibir o dossie.</p>
+                    <p className="mt-2 text-sm text-zinc-500">Selecione uma conversa para preparar o ZIP de anexos.</p>
                   )}
                 </section>
 
                 <section className="rounded-xl border border-zinc-200 p-3">
                   <h3 className="text-xs uppercase tracking-wider text-zinc-500">Anexos</h3>
-                  {dossier?.attachments.length ? (
-                    dossier.attachments.map((attachment) => (
+                  {conversationAttachmentArchive?.attachments.length ? (
+                    conversationAttachmentArchive.attachments.map((attachment) => (
                       <a
                         key={attachment.id}
                         className="mt-2 block text-sm underline"
                         href={attachment.url}
-                        data-testid={`dossier-attachment-${attachment.id}`}
+                        data-testid={`conversation-files-attachment-${attachment.id}`}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -864,19 +849,11 @@ export default function Home() {
                   <h3 className="text-xs uppercase tracking-wider text-zinc-500">Acoes</h3>
                   <button
                     className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                    onClick={handleExportDossierZip}
-                    data-testid="dossier-export-button"
+                    onClick={handleExportConversationAttachmentArchiveZip}
+                    data-testid="conversation-files-export-button"
                     disabled={!selectedConversationId || performingAction}
                   >
-                    Exportar dossie (ZIP)
-                  </button>
-                  <button
-                    className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
-                    onClick={handleExportDossierPdf}
-                    data-testid="dossier-export-pdf-button"
-                    disabled={!selectedConversationId || performingAction}
-                  >
-                    Exportar resumo (PDF)
+                    Exportar ZIP de anexos
                   </button>
                   <label htmlFor="closureReason" className="mt-3 block text-xs font-medium text-zinc-700">
                     Motivo de encerramento
@@ -887,13 +864,13 @@ export default function Home() {
                     className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                     placeholder="Ex: documentacao validada e caso concluido"
                     value={closureReason}
-                    data-testid="dossier-closure-reason-input"
+                    data-testid="conversation-files-closure-reason-input"
                     onChange={(event) => setClosureReason(event.target.value)}
                   />
                   <button
                     className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
                     onClick={handleCloseConversation}
-                    data-testid="dossier-close-button"
+                    data-testid="conversation-files-close-button"
                     disabled={!selectedConversationId || performingAction}
                   >
                     Encerrar caso
@@ -946,12 +923,11 @@ function formatDateTime(timestamp: number): string {
   });
 }
 
-function downloadBytes(fileName: string, payload: Uint8Array, mimeType: string): void {
-  const blob = new Blob([payload], { type: mimeType });
-  const url = window.URL.createObjectURL(blob);
+function downloadFileFromUrl(url: string, fileName: string): void {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
   anchor.click();
-  window.URL.revokeObjectURL(url);
 }

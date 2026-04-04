@@ -47,15 +47,14 @@ type Thread = {
   handoffHistory: unknown[];
 };
 
-type Dossier = {
+type ConversationAttachmentArchive = {
+  formatVersion: "conversation.attachments.zip.v1";
+  tenantId: string;
   conversationId: string;
-  contactId: string;
   generatedAtIso: string;
-  dossier: {
-    role: string;
-    location: string;
-    summary: string;
-  };
+  zipFileName: string;
+  zipDownloadUrl: string;
+  attachmentCount: number;
   attachments: Array<{
     id: string;
     fileName: string;
@@ -82,7 +81,7 @@ const mocks = vi.hoisted(() => {
   let sessionToken: string | null = null;
   let conversationsState: Conversation[] = [];
   const threadState = new Map<string, Thread>();
-  const dossierState = new Map<string, Dossier>();
+  const conversationAttachmentArchiveState = new Map<string, ConversationAttachmentArchive>();
   let workspaceState: Workspace = {
     tenantId: "tenant-1",
     tenantName: "IA Prev Demo",
@@ -134,10 +133,10 @@ const mocks = vi.hoisted(() => {
     sendMessage: vi.fn(async () => {}),
     takeHandoff: vi.fn(async () => {}),
     closeConversation: vi.fn(async () => {}),
-    exportDossier: vi.fn(async (conversationId: string) => {
-      const payload = dossierState.get(conversationId);
+    exportConversationAttachmentArchive: vi.fn(async (conversationId: string) => {
+      const payload = conversationAttachmentArchiveState.get(conversationId);
       if (!payload) {
-        throw new hoisted.MockBackendApiClientError("Dossier not found", "NOT_FOUND", 404);
+        throw new hoisted.MockBackendApiClientError("Conversation archive not found", "NOT_FOUND", 404);
       }
       return payload;
     }),
@@ -178,7 +177,7 @@ const mocks = vi.hoisted(() => {
     };
 
     threadState.clear();
-    dossierState.clear();
+    conversationAttachmentArchiveState.clear();
     conversationsSubscription = null;
     threadSubscriptions.clear();
     Object.values(backendClient).forEach((candidate) => {
@@ -188,17 +187,21 @@ const mocks = vi.hoisted(() => {
     });
   };
 
-  const seed = (input: { conversations: Conversation[]; threadByConversation: Record<string, Thread>; dossierByConversation: Record<string, Dossier> }) => {
+  const seed = (input: {
+    conversations: Conversation[];
+    threadByConversation: Record<string, Thread>;
+    conversationAttachmentArchiveByConversation: Record<string, ConversationAttachmentArchive>;
+  }) => {
     conversationsState = input.conversations;
     threadState.clear();
-    dossierState.clear();
+    conversationAttachmentArchiveState.clear();
 
     Object.entries(input.threadByConversation).forEach(([conversationId, payload]) => {
       threadState.set(conversationId, payload);
     });
 
-    Object.entries(input.dossierByConversation).forEach(([conversationId, payload]) => {
-      dossierState.set(conversationId, payload);
+    Object.entries(input.conversationAttachmentArchiveByConversation).forEach(([conversationId, payload]) => {
+      conversationAttachmentArchiveState.set(conversationId, payload);
     });
   };
 
@@ -255,16 +258,15 @@ function thread(conversationId: string, messages: string[]): Thread {
   };
 }
 
-function dossier(conversationId: string): Dossier {
+function conversationAttachmentArchive(conversationId: string): ConversationAttachmentArchive {
   return {
+    formatVersion: "conversation.attachments.zip.v1",
+    tenantId: "tenant-1",
     conversationId,
-    contactId: `contact-${conversationId}`,
     generatedAtIso: "2026-03-31T12:00:00.000Z",
-    dossier: {
-      role: "Aposentada",
-      location: "Sao Paulo",
-      summary: `Resumo ${conversationId}`,
-    },
+    zipFileName: `arquivos-conversa-${conversationId}.zip`,
+    zipDownloadUrl: `https://storage.example.com/arquivos-conversa-${conversationId}.zip`,
+    attachmentCount: 0,
     attachments: [],
   };
 }
@@ -312,7 +314,7 @@ describe("OperatorAppProvider realtime behavior", () => {
     mocks.seed({
       conversations: [conversation("c-1", 1)],
       threadByConversation: { "c-1": thread("c-1", ["Mensagem inicial"]) },
-      dossierByConversation: { "c-1": dossier("c-1") },
+      conversationAttachmentArchiveByConversation: { "c-1": conversationAttachmentArchive("c-1") },
     });
 
     const app = renderProvider();
@@ -344,7 +346,7 @@ describe("OperatorAppProvider realtime behavior", () => {
     mocks.seed({
       conversations: [conversation("c-1", 2)],
       threadByConversation: { "c-1": thread("c-1", ["Ola"]) },
-      dossierByConversation: { "c-1": dossier("c-1") },
+      conversationAttachmentArchiveByConversation: { "c-1": conversationAttachmentArchive("c-1") },
     });
 
     const app = renderProvider();
@@ -375,7 +377,7 @@ describe("OperatorAppProvider realtime behavior", () => {
     mocks.seed({
       conversations: [conversation("c-1", 0)],
       threadByConversation: { "c-1": thread("c-1", ["Fluxo inicial"]) },
-      dossierByConversation: { "c-1": dossier("c-1") },
+      conversationAttachmentArchiveByConversation: { "c-1": conversationAttachmentArchive("c-1") },
     });
 
     const app = renderProvider();
@@ -386,7 +388,7 @@ describe("OperatorAppProvider realtime behavior", () => {
 
     await waitFor(() => {
       expect(app.getContext().selectedConversationId).toBe("c-1");
-      expect(app.getContext().dossier?.conversationId).toBe("c-1");
+      expect(app.getContext().conversationAttachmentArchive?.conversationId).toBe("c-1");
     });
 
     await act(async () => {
@@ -400,7 +402,7 @@ describe("OperatorAppProvider realtime behavior", () => {
     expect(mocks.backendClient.closeConversation).toHaveBeenCalledWith("c-1", "Caso concluido");
 
     await act(async () => {
-      const exported = await app.getContext().exportDossier();
+      const exported = await app.getContext().exportConversationAttachmentArchive();
       expect(exported?.conversationId).toBe("c-1");
     });
 

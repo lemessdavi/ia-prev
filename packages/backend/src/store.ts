@@ -4,7 +4,7 @@ import type {
   AuditLog,
   Conversation,
   Database,
-  DossierEvent,
+  ContactProfileEvent,
   HandoffEvent,
   Message,
   StoredSession,
@@ -133,8 +133,8 @@ export class InMemoryBackendStore {
       .sort((a, b) => a.createdAt - b.createdAt);
   }
 
-  listDossierEvents(contactId: string, tenantId: TenantId): DossierEvent[] {
-    return this.state.dossierEvents
+  listContactProfileEvents(contactId: string, tenantId: TenantId): ContactProfileEvent[] {
+    return this.state.contactProfileEvents
       .filter((event) => event.contactId === contactId && event.tenantId === tenantId)
       .sort((a, b) => b.occurredAt - a.occurredAt);
   }
@@ -176,8 +176,8 @@ export class InMemoryBackendStore {
     return updates;
   }
 
-  findDossier(contactId: string, tenantId: TenantId) {
-    return this.state.dossiers.find((dossier) => dossier.contactId === contactId && dossier.tenantId === tenantId);
+  findContactProfile(contactId: string, tenantId: TenantId) {
+    return this.state.contactProfiles.find((contactProfile) => contactProfile.contactId === contactId && contactProfile.tenantId === tenantId);
   }
 
   findUser(userId: string, tenantId: TenantId): User | undefined {

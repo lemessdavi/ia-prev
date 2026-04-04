@@ -1,9 +1,9 @@
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   BackendApiClientError,
+  type ConversationAttachmentArchiveDTO,
   type ConversationInboxItemDTO,
   type ConversationThreadPayloadDTO,
-  type DossierExportDTO,
   type TenantWorkspaceSummaryDTO,
   type TriageResult,
 } from "utils";
@@ -15,14 +15,14 @@ type OperatorAppContextValue = {
   workspace: TenantWorkspaceSummaryDTO | null;
   conversations: ConversationInboxItemDTO[];
   thread: ConversationThreadPayloadDTO | null;
-  dossier: DossierExportDTO | null;
+  conversationAttachmentArchive: ConversationAttachmentArchiveDTO | null;
   selectedConversationId: string | null;
   statusFilter: InboxFilter;
   search: string;
   loadingAuth: boolean;
   loadingConversations: boolean;
   loadingThread: boolean;
-  loadingDossier: boolean;
+  loadingConversationAttachmentArchive: boolean;
   loadingAction: boolean;
   errorMessage: string | null;
   isAuthenticated: boolean;
@@ -36,7 +36,7 @@ type OperatorAppContextValue = {
   takeHandoff: () => Promise<void>;
   closeConversation: (reason: string) => Promise<void>;
   setConversationTriageResult: (triageResult: TriageResult) => Promise<void>;
-  exportDossier: () => Promise<DossierExportDTO | null>;
+  exportConversationAttachmentArchive: () => Promise<ConversationAttachmentArchiveDTO | null>;
   refresh: () => Promise<void>;
 };
 
@@ -46,7 +46,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<TenantWorkspaceSummaryDTO | null>(null);
   const [conversations, setConversations] = useState<ConversationInboxItemDTO[]>([]);
   const [thread, setThread] = useState<ConversationThreadPayloadDTO | null>(null);
-  const [dossier, setDossier] = useState<DossierExportDTO | null>(null);
+  const [conversationAttachmentArchive, setConversationAttachmentArchive] = useState<ConversationAttachmentArchiveDTO | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<InboxFilter>("ALL");
   const [search, setSearch] = useState("");
@@ -54,7 +54,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
-  const [loadingDossier, setLoadingDossier] = useState(false);
+  const [loadingConversationAttachmentArchive, setLoadingConversationAttachmentArchive] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -79,7 +79,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     setWorkspace(null);
     setConversations([]);
     setThread(null);
-    setDossier(null);
+    setConversationAttachmentArchive(null);
     setSelectedConversationId(null);
   }, []);
 
@@ -149,16 +149,16 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     [toReadableError],
   );
 
-  const loadDossier = useCallback(
+  const loadConversationAttachmentArchive = useCallback(
     async (conversationId: string) => {
-      setLoadingDossier(true);
+      setLoadingConversationAttachmentArchive(true);
       try {
-        const payload = await backendClient.exportDossier(conversationId);
-        setDossier(payload);
+        const payload = await backendClient.exportConversationAttachmentArchive(conversationId);
+        setConversationAttachmentArchive(payload);
       } catch (error) {
-        setErrorMessage(toReadableError(error, "Falha ao carregar dossie."));
+        setErrorMessage(toReadableError(error, "Falha ao carregar arquivos da conversa."));
       } finally {
-        setLoadingDossier(false);
+        setLoadingConversationAttachmentArchive(false);
       }
     },
     [toReadableError],
@@ -202,7 +202,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated || !selectedConversationId) {
       setThread(null);
-      setDossier(null);
+      setConversationAttachmentArchive(null);
       return;
     }
 
@@ -225,13 +225,13 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       }
     })();
 
-    void loadDossier(selectedConversationId);
+    void loadConversationAttachmentArchive(selectedConversationId);
 
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [isAuthenticated, loadDossier, selectedConversationId, toReadableError]);
+  }, [isAuthenticated, loadConversationAttachmentArchive, selectedConversationId, toReadableError]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -299,14 +299,14 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       setErrorMessage(null);
       try {
         await backendClient.closeConversation(selectedConversationId, reason);
-        await loadDossier(selectedConversationId);
+        await loadConversationAttachmentArchive(selectedConversationId);
       } catch (error) {
         setErrorMessage(toReadableError(error, "Falha ao encerrar conversa."));
       } finally {
         setLoadingAction(false);
       }
     },
-    [loadDossier, selectedConversationId, toReadableError],
+    [loadConversationAttachmentArchive, selectedConversationId, toReadableError],
   );
 
   const setConversationTriageResult = useCallback(
@@ -327,16 +327,16 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
     [loadConversations, loadThread, selectedConversationId, toReadableError],
   );
 
-  const exportDossier = useCallback(async () => {
+  const exportConversationAttachmentArchive = useCallback(async () => {
     if (!selectedConversationId) return null;
     setLoadingAction(true);
     setErrorMessage(null);
     try {
-      const payload = await backendClient.exportDossier(selectedConversationId);
-      setDossier(payload);
+      const payload = await backendClient.exportConversationAttachmentArchive(selectedConversationId);
+      setConversationAttachmentArchive(payload);
       return payload;
     } catch (error) {
-      setErrorMessage(toReadableError(error, "Falha ao exportar dossie."));
+      setErrorMessage(toReadableError(error, "Falha ao exportar ZIP de anexos."));
       return null;
     } finally {
       setLoadingAction(false);
@@ -356,14 +356,14 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       workspace,
       conversations,
       thread,
-      dossier,
+      conversationAttachmentArchive,
       selectedConversationId,
       statusFilter,
       search,
       loadingAuth,
       loadingConversations,
       loadingThread,
-      loadingDossier,
+      loadingConversationAttachmentArchive,
       loadingAction,
       errorMessage,
       isAuthenticated,
@@ -377,21 +377,21 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       takeHandoff,
       closeConversation,
       setConversationTriageResult,
-      exportDossier,
+      exportConversationAttachmentArchive,
       refresh,
     }),
     [
       workspace,
       conversations,
       thread,
-      dossier,
+      conversationAttachmentArchive,
       selectedConversationId,
       statusFilter,
       search,
       loadingAuth,
       loadingConversations,
       loadingThread,
-      loadingDossier,
+      loadingConversationAttachmentArchive,
       loadingAction,
       errorMessage,
       isAuthenticated,
@@ -402,7 +402,7 @@ export function OperatorAppProvider({ children }: { children: ReactNode }) {
       takeHandoff,
       closeConversation,
       setConversationTriageResult,
-      exportDossier,
+      exportConversationAttachmentArchive,
       refresh,
     ],
   );
