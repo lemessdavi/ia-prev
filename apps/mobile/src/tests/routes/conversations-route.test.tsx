@@ -2,7 +2,7 @@
 import React, { type ReactNode } from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import ConversationsScreen from "@/app/(tabs)/index";
+import ConversationsScreen from "@/app/index";
 
 const selectConversationMock = vi.fn();
 const logoutMock = vi.fn();
@@ -10,6 +10,7 @@ const pushMock = vi.fn();
 const useOperatorAppMock = vi.fn();
 
 vi.mock("expo-router", () => ({
+  Redirect: () => null,
   useRouter: () => ({
     push: pushMock,
   }),
@@ -95,6 +96,7 @@ describe("Conversations screen", () => {
 
   it("opens chat details when pressing a conversation", async () => {
     useOperatorAppMock.mockReturnValue({
+      isAuthenticated: true,
       workspace: {
         tenantName: "IA Prev Demo",
         wabaLabel: "WA Demo",
@@ -105,7 +107,7 @@ describe("Conversations screen", () => {
           conversationId: "c-1",
           title: "Conversa c-1",
           lastMessagePreview: "Mensagem",
-          conversationStatus: "EM_TRIAGEM",
+          triageResult: "N_A",
           unreadCount: 0,
         },
       ],

@@ -5,8 +5,15 @@ import * as FileSystemLegacy from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
-import { bytesToBase64, createDossierExportFiles, resolveThreadMessageOrigin, shouldRenderMessageOnRight } from "utils";
+import { bytesToBase64, createDossierExportFiles, resolveThreadMessageOrigin, shouldRenderMessageOnRight, type TriageResult } from "utils";
 import { useOperatorApp } from "@/context/operatorAppContext";
+
+const triageOptions: { label: string; value: TriageResult }[] = [
+  { label: "Nenhum (N/A)", value: "N_A" },
+  { label: "Apto", value: "APTO" },
+  { label: "Revisao humana", value: "REVISAO_HUMANA" },
+  { label: "Nao apto", value: "NAO_APTO" },
+];
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -27,6 +34,7 @@ export default function ChatScreen() {
   } = useOperatorApp();
   const [draft, setDraft] = useState("");
   const [shareError, setShareError] = useState<string | null>(null);
+  const [triageDropdownOpen, setTriageDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -74,6 +82,12 @@ export default function ChatScreen() {
   }
 
   const canActOnConversation = Boolean(selectedConversationId) && !loadingAction;
+  const currentTriageResult = thread?.triageResult ?? "N_A";
+
+  async function handleSetTriageResult(nextResult: TriageResult) {
+    await setConversationTriageResult(nextResult);
+    setTriageDropdownOpen(false);
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.colors.bg }}>
@@ -89,12 +103,12 @@ export default function ChatScreen() {
             <Text style={{ color: tokens.colors.textMuted }}>Operador: {workspace?.operator.fullName ?? "-"}</Text>
             <Text style={{ marginTop: 4, color: tokens.colors.textMuted }}>Triagem: {toTriageLabel(thread?.triageResult ?? "N_A")}</Text>
           </View>
-          <View style={{ gap: 8, alignItems: "flex-end" }}>
+          <View style={{ width: 170, gap: 8, alignItems: "flex-end" }}>
             <Pressable
               onPress={() => void takeHandoff()}
               disabled={!canActOnConversation}
               style={{
-                alignSelf: "flex-start",
+                alignSelf: "flex-end",
                 backgroundColor: tokens.colors.primary,
                 borderRadius: 10,
                 paddingHorizontal: 14,
@@ -104,28 +118,43 @@ export default function ChatScreen() {
             >
               <Text style={{ color: "#fff", fontWeight: "600" }}>Assumir Conversa</Text>
             </Pressable>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
-              {[
-                { label: "Marcar apto", value: "APTO" as const },
-                { label: "Marcar revisao", value: "REVISAO_HUMANA" as const },
-                { label: "Marcar nao apto", value: "NAO_APTO" as const },
-              ].map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => void setConversationTriageResult(option.value)}
-                  disabled={!canActOnConversation}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: tokens.colors.border,
-                    borderRadius: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    opacity: canActOnConversation ? 1 : 0.6,
-                  }}
-                >
-                  <Text>{option.label}</Text>
-                </Pressable>
-              ))}
+            <View style={{ width: "100%", gap: 6 }}>
+              <Pressable
+                onPress={() => setTriageDropdownOpen((current) => !current)}
+                disabled={!canActOnConversation}
+                style={{
+                  borderWidth: 1,
+                  borderColor: tokens.colors.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  backgroundColor: tokens.colors.panel,
+                  opacity: canActOnConversation ? 1 : 0.6,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: tokens.colors.textMuted }}>Triagem manual</Text>
+                <Text style={{ marginTop: 2 }}>{toTriageLabel(currentTriageResult)}</Text>
+              </Pressable>
+              {triageDropdownOpen
+                ? triageOptions.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => void handleSetTriageResult(option.value)}
+                      disabled={!canActOnConversation}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: tokens.colors.border,
+                        borderRadius: 10,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        backgroundColor: option.value === currentTriageResult ? "#f4f4f5" : tokens.colors.panel,
+                        opacity: canActOnConversation ? 1 : 0.6,
+                      }}
+                    >
+                      <Text>{option.label}</Text>
+                    </Pressable>
+                  ))
+                : null}
             </View>
             <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
               <Pressable

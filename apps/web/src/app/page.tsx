@@ -35,7 +35,6 @@ const triageStyles: Record<TriageResult, { backgroundColor: string; color: strin
 };
 
 type InboxFilter = "ALL" | "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "FINALIZADO";
-type ManualTriageResult = Exclude<TriageResult, "N_A">;
 
 const statusOptions: Array<{ label: string; value: InboxFilter }> = [
   { label: "Todos", value: "ALL" },
@@ -120,20 +119,6 @@ export default function Home() {
   );
   const threadMessageCount = thread?.messages.length ?? 0;
   const threadLastMessageId = thread?.messages[threadMessageCount - 1]?.id ?? null;
-
-  if (!convexUrl) {
-    return (
-      <main className="min-h-screen bg-zinc-50 p-8" data-testid="convex-url-missing-screen">
-        {isHydrated ? <span data-testid="app-hydrated" hidden /> : null}
-        <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-6">
-          <h1 className="text-2xl font-semibold">Convex URL nao configurada</h1>
-          <p className="mt-2 text-sm text-zinc-600">
-            Defina <code>NEXT_PUBLIC_CONVEX_URL</code> para conectar o frontend ao backend Convex.
-          </p>
-        </section>
-      </main>
-    );
-  }
 
   const clearSession = useCallback(() => {
     api.setSessionToken(null);
@@ -404,7 +389,7 @@ export default function Home() {
     }
   }
 
-  async function handleSetConversationTriageResult(result: ManualTriageResult) {
+  async function handleSetConversationTriageResult(result: TriageResult) {
     if (!selectedConversationId) return;
     setPerformingAction(true);
     setErrorMessage(null);
@@ -467,6 +452,20 @@ export default function Home() {
     } finally {
       setPerformingAction(false);
     }
+  }
+
+  if (!convexUrl) {
+    return (
+      <main className="min-h-screen bg-zinc-50 p-8" data-testid="convex-url-missing-screen">
+        {isHydrated ? <span data-testid="app-hydrated" hidden /> : null}
+        <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-6">
+          <h1 className="text-2xl font-semibold">Convex URL nao configurada</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            Defina <code>NEXT_PUBLIC_CONVEX_URL</code> para conectar o frontend ao backend Convex.
+          </p>
+        </section>
+      </main>
+    );
   }
 
   if (!isAuthenticated) {
@@ -690,23 +689,21 @@ export default function Home() {
                   >
                     Assumir conversa
                   </button>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    {[
-                      { label: "Marcar apto", value: "APTO" as const },
-                      { label: "Marcar revisao", value: "REVISAO_HUMANA" as const },
-                      { label: "Marcar nao apto", value: "NAO_APTO" as const },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs disabled:opacity-40"
-                        onClick={() => void handleSetConversationTriageResult(option.value)}
-                        data-testid={`manual-triage-${option.value}`}
-                        disabled={!selectedConversationId || performingAction}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="flex w-full flex-col gap-1 text-xs text-zinc-500">
+                    Triagem manual
+                    <select
+                      className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-40"
+                      data-testid="manual-triage-select"
+                      value={thread?.triageResult ?? "N_A"}
+                      onChange={(event) => void handleSetConversationTriageResult(event.target.value as TriageResult)}
+                      disabled={!selectedConversationId || performingAction}
+                    >
+                      <option value="N_A">Nenhum (N/A)</option>
+                      <option value="APTO">Apto</option>
+                      <option value="REVISAO_HUMANA">Revisao humana</option>
+                      <option value="NAO_APTO">Nao apto</option>
+                    </select>
+                  </label>
                 </div>
               </header>
               <div
