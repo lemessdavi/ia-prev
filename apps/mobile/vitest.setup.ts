@@ -12,6 +12,20 @@ vi.mock("@expo/vector-icons", () => {
   };
 });
 
+vi.mock("expo-sharing", () => ({
+  isAvailableAsync: vi.fn().mockResolvedValue(true),
+  shareAsync: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("expo-file-system/legacy", () => ({
+  cacheDirectory: "/tmp/",
+  documentDirectory: "/tmp/",
+  EncodingType: {
+    Base64: "base64",
+  },
+  writeAsStringAsync: vi.fn().mockResolvedValue(undefined),
+}));
+
 afterEach(() => {
   cleanup();
 });

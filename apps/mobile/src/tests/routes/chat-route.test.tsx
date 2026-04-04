@@ -36,6 +36,13 @@ vi.mock("config", () => ({
 }));
 
 vi.mock("utils", () => ({
+  bytesToBase64: () => "YmFzZTY0",
+  createDossierExportFiles: () => ({
+    zipFileName: "dossie.zip",
+    zipBytes: new Uint8Array([1, 2, 3]),
+    pdfFileName: "dossie.pdf",
+    pdfBytes: new Uint8Array([4, 5, 6]),
+  }),
   resolveThreadMessageOrigin: () => "operator",
   shouldRenderMessageOnRight: () => true,
 }));
