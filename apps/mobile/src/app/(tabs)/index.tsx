@@ -1,16 +1,15 @@
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens } from "config";
-import type { ConversationStatus } from "utils";
 import { AuthGate } from "@/components/AuthGate";
-import { useOperatorApp } from "@/context/operatorAppContext";
+import { type InboxFilter, useOperatorApp } from "@/context/operatorAppContext";
 
-const statusOptions: Array<{ label: string; value: ConversationStatus | "ALL" }> = [
+const statusOptions: Array<{ label: string; value: InboxFilter }> = [
   { label: "Todos", value: "ALL" },
-  { label: "Triagem", value: "EM_TRIAGEM" },
-  { label: "Humano", value: "PENDENTE_HUMANO" },
-  { label: "Atendimento", value: "EM_ATENDIMENTO_HUMANO" },
-  { label: "Fechado", value: "FECHADO" },
+  { label: "Apto", value: "APTO" },
+  { label: "Revisao", value: "REVISAO_HUMANA" },
+  { label: "Nao apto", value: "NAO_APTO" },
+  { label: "Finalizado", value: "FINALIZADO" },
 ];
 
 export default function ConversationsScreen() {
@@ -100,7 +99,7 @@ export default function ConversationsScreen() {
                   ) : null}
                 </View>
                 <Text style={{ color: tokens.colors.textMuted, marginTop: 4 }}>{item.lastMessagePreview}</Text>
-                <Text style={{ marginTop: 8 }}>{toStatusLabel(item.conversationStatus)}</Text>
+                <Text style={{ marginTop: 8 }}>{toTriageLabel(item.triageResult)}</Text>
               </Pressable>
             )}
           />
@@ -120,17 +119,17 @@ export default function ConversationsScreen() {
   );
 }
 
-function toStatusLabel(status: ConversationStatus): string {
-  switch (status) {
-    case "EM_TRIAGEM":
-      return "Em triagem";
-    case "PENDENTE_HUMANO":
-      return "Pendente humano";
-    case "EM_ATENDIMENTO_HUMANO":
-      return "Em atendimento humano";
-    case "FECHADO":
-      return "Fechado";
+function toTriageLabel(result: string): string {
+  switch (result) {
+    case "APTO":
+      return "Apto";
+    case "REVISAO_HUMANA":
+      return "Revisao humana";
+    case "NAO_APTO":
+      return "Nao apto";
+    case "N_A":
+      return "N/A";
     default:
-      return status;
+      return result;
   }
 }

@@ -7,6 +7,7 @@ import type {
   DossierExportDTO,
   LoginResponse,
   TenantWorkspaceSummaryDTO,
+  TriageResult,
 } from "./backendApiTypes";
 
 const DEFAULT_CONVEX_URL = "";
@@ -37,6 +38,7 @@ export interface BackendApiClient {
   sendMessage(conversationId: string, body: string, attachmentUrl?: string): Promise<void>;
   takeHandoff(conversationId: string): Promise<void>;
   closeConversation(conversationId: string, reason: string): Promise<void>;
+  setConversationTriageResult(conversationId: string, triageResult: Exclude<TriageResult, "N_A">): Promise<void>;
   exportDossier(conversationId: string): Promise<DossierExportDTO>;
 }
 
@@ -248,6 +250,16 @@ export function createBackendApiClient(convexUrl = DEFAULT_CONVEX_URL): BackendA
           sessionToken: requireSessionToken(),
           conversationId,
           reason,
+        });
+      });
+    },
+    async setConversationTriageResult(conversationId, triageResult) {
+      await execute(async () => {
+        const client = getConvexClient(convexUrl);
+        await client.mutation(convexApi.chat.setConversationTriageResult, {
+          sessionToken: requireSessionToken(),
+          conversationId,
+          triageResult,
         });
       });
     },

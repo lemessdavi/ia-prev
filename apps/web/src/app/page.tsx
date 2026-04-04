@@ -10,6 +10,7 @@ import {
   type ConversationThreadPayloadDTO,
   type DossierExportDTO,
   type TenantWorkspaceSummaryDTO,
+  type TriageResult,
 } from "utils";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim() ?? "";
@@ -22,13 +23,22 @@ const statusStyles: Record<ConversationStatus, { backgroundColor: string; color:
   EM_ATENDIMENTO_HUMANO: { backgroundColor: tokens.colors.primary, color: "#ffffff" },
   FECHADO: { backgroundColor: "#e4e4e7", color: "#3f3f46" },
 };
+const triageStyles: Record<TriageResult, { backgroundColor: string; color: string }> = {
+  APTO: { backgroundColor: "#dcfce7", color: "#166534" },
+  REVISAO_HUMANA: { backgroundColor: "#fef3c7", color: "#92400e" },
+  NAO_APTO: { backgroundColor: "#fee2e2", color: "#991b1b" },
+  N_A: { backgroundColor: "#e4e4e7", color: "#3f3f46" },
+};
 
-const statusOptions: Array<{ label: string; value: ConversationStatus | "ALL" }> = [
+type InboxFilter = "ALL" | "APTO" | "REVISAO_HUMANA" | "NAO_APTO" | "FINALIZADO";
+type ManualTriageResult = Exclude<TriageResult, "N_A">;
+
+const statusOptions: Array<{ label: string; value: InboxFilter }> = [
   { label: "Todos", value: "ALL" },
-  { label: "Triagem", value: "EM_TRIAGEM" },
-  { label: "Pendente", value: "PENDENTE_HUMANO" },
-  { label: "Atendimento", value: "EM_ATENDIMENTO_HUMANO" },
-  { label: "Fechado", value: "FECHADO" },
+  { label: "Apto", value: "APTO" },
+  { label: "Revisao", value: "REVISAO_HUMANA" },
+  { label: "Nao apto", value: "NAO_APTO" },
+  { label: "Finalizado", value: "FINALIZADO" },
 ];
 
 type MobilePanel = "inbox" | "chat" | "dossier";
@@ -42,7 +52,7 @@ export default function Home() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("inbox");
 
-  const [statusFilter, setStatusFilter] = useState<ConversationStatus | "ALL">("ALL");
+  const [statusFilter, setStatusFilter] = useState<InboxFilter>("ALL");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
@@ -113,15 +123,22 @@ export default function Home() {
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
     try {
+      const statusParam = statusFilter === "FINALIZADO" ? "FECHADO" : "ALL";
       const rows = await api.listConversations({
-        status: statusFilter,
+        status: statusParam,
         search,
       });
-      setConversations(rows);
-      if (!selectedConversationId && rows[0]) {
-        setSelectedConversationId(rows[0].conversationId);
-      } else if (selectedConversationId && !rows.some((row) => row.conversationId === selectedConversationId)) {
-        setSelectedConversationId(rows[0]?.conversationId ?? null);
+
+      const filteredRows =
+        statusFilter === "APTO" || statusFilter === "REVISAO_HUMANA" || statusFilter === "NAO_APTO"
+          ? rows.filter((row) => row.triageResult === statusFilter)
+          : rows;
+
+      setConversations(filteredRows);
+      if (!selectedConversationId && filteredRows[0]) {
+        setSelectedConversationId(filteredRows[0].conversationId);
+      } else if (selectedConversationId && !filteredRows.some((row) => row.conversationId === selectedConversationId)) {
+        setSelectedConversationId(filteredRows[0]?.conversationId ?? null);
       }
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao carregar conversas."));
@@ -274,6 +291,21 @@ export default function Home() {
       await loadThread(selectedConversationId, false);
     } catch (error) {
       setErrorMessage(toReadableError(error, "Falha ao assumir conversa."));
+    } finally {
+      setPerformingAction(false);
+    }
+  }
+
+  async function handleSetConversationTriageResult(result: ManualTriageResult) {
+    if (!selectedConversationId) return;
+    setPerformingAction(true);
+    setErrorMessage(null);
+    try {
+      await api.setConversationTriageResult(selectedConversationId, result);
+      await loadConversations();
+      await loadThread(selectedConversationId, false);
+    } catch (error) {
+      setErrorMessage(toReadableError(error, "Falha ao atualizar resultado da triagem."));
     } finally {
       setPerformingAction(false);
     }
@@ -493,6 +525,9 @@ export default function Home() {
                       </div>
                       <p className="mt-2 line-clamp-2 text-sm text-zinc-600">{conversation.lastMessagePreview}</p>
                       <div className="mt-3 flex items-center gap-2">
+                        <span className="rounded-md px-2 py-1 text-xs font-medium" style={triageStyles[conversation.triageResult]}>
+                          {toTriageLabel(conversation.triageResult)}
+                        </span>
                         <span
                           className="rounded-md px-2 py-1 text-xs font-medium"
                           data-testid={`conversation-status-${conversation.conversationId}`}
@@ -525,14 +560,33 @@ export default function Home() {
                     Fluxo: {thread ? toTriageLabel(thread.triageResult) : "N/A"}
                   </p>
                 </div>
-                <button
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-                  onClick={handleTakeHandoff}
-                  data-testid="handoff-button"
-                  disabled={!selectedConversationId || performingAction}
-                >
-                  Assumir conversa
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    onClick={handleTakeHandoff}
+                    data-testid="handoff-button"
+                    disabled={!selectedConversationId || performingAction}
+                  >
+                    Assumir conversa
+                  </button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {[
+                      { label: "Marcar apto", value: "APTO" as const },
+                      { label: "Marcar revisao", value: "REVISAO_HUMANA" as const },
+                      { label: "Marcar nao apto", value: "NAO_APTO" as const },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs disabled:opacity-40"
+                        onClick={() => void handleSetConversationTriageResult(option.value)}
+                        data-testid={`manual-triage-${option.value}`}
+                        disabled={!selectedConversationId || performingAction}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </header>
               <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
                 {loadingThread ? (
@@ -693,7 +747,7 @@ function toStatusLabel(status: ConversationStatus): string {
     case "EM_ATENDIMENTO_HUMANO":
       return "Em atendimento";
     case "FECHADO":
-      return "Fechado";
+      return "Finalizado";
     default:
       return status;
   }

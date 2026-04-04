@@ -323,6 +323,11 @@ export const api = {
       { sessionToken: string; conversationId: string; reason: string },
       { conversationId: string; conversationStatus: ConversationStatus; closureReason: string }
     >("chatDomain:closeConversationWithReason"),
+    setConversationTriageResult: makeFunctionReference<
+      "mutation",
+      { sessionToken: string; conversationId: string; triageResult: Exclude<TriageResult, "N_A"> },
+      { conversationId: string; triageResult: Exclude<TriageResult, "N_A"> }
+    >("chatDomain:setConversationTriageResult"),
     upsertTriageAnswers: makeFunctionReference<
       "mutation",
       { sessionToken: string; conversationId: string; flowType: TriageFlow; answers: TriageAnswers },

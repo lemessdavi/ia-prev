@@ -628,6 +628,63 @@ export const closeConversationWithReason = mutation({
   },
 });
 
+export const setConversationTriageResult = mutation({
+  args: {
+    sessionToken: v.string(),
+    conversationId: v.string(),
+    triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO")),
+  },
+  returns: v.object({
+    conversationId: v.string(),
+    triageResult: v.union(v.literal("APTO"), v.literal("REVISAO_HUMANA"), v.literal("NAO_APTO")),
+  }),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx.db, args.sessionToken);
+    const conversationId = assertId(args.conversationId, "conversationId");
+    const now = Date.now();
+
+    const conversation = await requireTenantConversation(ctx.db, {
+      tenantId: session.tenantId,
+      conversationId,
+    });
+
+    await ctx.db.patch(conversation._id, {
+      triageResult: args.triageResult,
+      lastActivityAt: Math.max(conversation.lastActivityAt, now),
+    });
+
+    const existingTriage = await ctx.db
+      .query("conversationTriages")
+      .withIndex("by_tenant_id_and_conversation_id", (q: any) =>
+        q.eq("tenantId", session.tenantId).eq("conversationId", conversationId),
+      )
+      .unique();
+
+    if (existingTriage) {
+      await ctx.db.patch(existingTriage._id, {
+        triageResult: args.triageResult,
+        updatedAt: now,
+        evaluatedAt: now,
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      auditLogId: `audit_triage_manual_${conversationId}_${now}_${crypto.randomUUID()}`,
+      tenantId: session.tenantId,
+      actorUserId: session.userId,
+      action: "conversation.triage.manual_set",
+      targetType: "conversation",
+      targetId: conversationId,
+      createdAt: now,
+    });
+
+    return {
+      conversationId,
+      triageResult: args.triageResult,
+    };
+  },
+});
+
 export const exportConversationDossier = mutation({
   args: {
     sessionToken: v.string(),

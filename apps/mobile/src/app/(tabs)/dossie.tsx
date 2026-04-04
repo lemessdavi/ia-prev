@@ -171,7 +171,7 @@ function toStatusLabel(status: string): string {
     case "EM_ATENDIMENTO_HUMANO":
       return "Em atendimento humano";
     case "FECHADO":
-      return "Fechado";
+      return "Finalizado";
     default:
       return status;
   }

@@ -11,6 +11,7 @@ const workspaceSummaryRef = makeFunctionReference<"query">("chatDomain:getTenant
 const listConversationsForInboxRef = makeFunctionReference<"query">("chatDomain:listConversationsForInbox");
 const getConversationThreadRef = makeFunctionReference<"query">("chatDomain:getConversationThread");
 const takeConversationHandoffRef = makeFunctionReference<"mutation">("chatDomain:takeConversationHandoff");
+const setConversationTriageResultRef = makeFunctionReference<"mutation">("chatDomain:setConversationTriageResult");
 const closeConversationWithReasonRef = makeFunctionReference<"mutation">("chatDomain:closeConversationWithReason");
 const exportConversationDossierRef = makeFunctionReference<"mutation">("chatDomain:exportConversationDossier");
 
@@ -133,6 +134,28 @@ describe("Convex tenant operator workspace flows", () => {
     expect(thread.handoffEvents.some((item: { to: string; performedByUserId?: string }) => item.to === "human" && item.performedByUserId === "usr_ana")).toBe(
       true,
     );
+  });
+
+  it("allows operator to manually set conversation triage result", async () => {
+    const t = await createSeededTestContext();
+    const session = await loginAs(t, "ana.lima", "Ana@123456");
+
+    const result = await t.mutation(setConversationTriageResultRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+      triageResult: "REVISAO_HUMANA",
+    });
+
+    expect(result).toMatchObject({
+      conversationId: "conv_ana_marina",
+      triageResult: "REVISAO_HUMANA",
+    });
+
+    const thread = await t.query(getConversationThreadRef, {
+      sessionToken: session.sessionToken,
+      conversationId: "conv_ana_marina",
+    });
+    expect(thread.triageResult).toBe("REVISAO_HUMANA");
   });
 
   it("closes conversation with reason and persists closure in dossier export", async () => {
