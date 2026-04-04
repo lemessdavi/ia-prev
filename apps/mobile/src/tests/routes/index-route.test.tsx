@@ -1,6 +1,6 @@
 /* eslint-disable react/display-name */
 import React, { type ReactNode } from "react";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Index from "@/app/index";
 
@@ -28,6 +28,10 @@ vi.mock("config", () => ({
       primary: "#111111",
     },
   },
+}));
+
+vi.mock("@expo/vector-icons", () => ({
+  Feather: ({ name }: { name: string }) => <span data-testid="logout-icon" data-icon-name={name} />,
 }));
 
 vi.mock("react-native-safe-area-context", () => ({
@@ -124,5 +128,38 @@ describe("Index route", () => {
     render(<Index />);
 
     expect(redirectSpy).not.toHaveBeenCalled();
+  });
+
+  it("renders a logout icon button on the right side of the tenant header row", () => {
+    useOperatorAppMock.mockReturnValue({
+      isAuthenticated: true,
+      workspace: {
+        tenantName: "IA Prev Demo",
+        wabaLabel: "WA Demo",
+        activeAiProfileName: "IA Assistente",
+      },
+      conversations: [],
+      selectedConversationId: null,
+      statusFilter: "ALL",
+      setStatusFilter: vi.fn(),
+      search: "",
+      setSearch: vi.fn(),
+      loadingConversations: false,
+      errorMessage: null,
+      selectConversation: vi.fn(),
+      logout: vi.fn(),
+    });
+
+    render(<Index />);
+
+    expect(screen.queryByText("Sair")).toBeNull();
+    expect(screen.getByLabelText("Logout")).toBeTruthy();
+    expect(screen.getByTestId("logout-icon")).toBeTruthy();
+
+    const tenantHeading = screen.getByText("IA Prev Demo");
+    const headerRow = tenantHeading.parentElement as HTMLElement;
+    expect(headerRow.style.flexDirection).toBe("row");
+    expect(headerRow.style.justifyContent).toBe("space-between");
+    expect(headerRow.style.alignItems).toBe("center");
   });
 });

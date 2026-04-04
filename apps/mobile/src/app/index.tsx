@@ -1,6 +1,7 @@
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
 import { tokens } from "config";
 import { type InboxFilter, useOperatorApp } from "@/context/operatorAppContext";
 
@@ -41,14 +42,16 @@ export default function Index() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.colors.bg }}>
       <View style={{ padding: 16 }}>
-        <Text accessibilityRole="header" style={{ fontSize: 28, fontWeight: "600" }}>
-          {workspace?.tenantName ?? "Conversas"}
-        </Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text accessibilityRole="header" style={{ fontSize: 28, fontWeight: "600" }}>
+            {workspace?.tenantName ?? "Conversas"}
+          </Text>
+          <Pressable accessibilityLabel="Logout" onPress={() => void logout()} style={{ padding: 6 }}>
+            <Feather name="log-out" size={22} color={tokens.colors.primary} />
+          </Pressable>
+        </View>
         <Text style={{ marginTop: 4, color: tokens.colors.textMuted }}>WhatsApp: {workspace?.wabaLabel ?? "-"}</Text>
         <Text style={{ marginTop: 4, color: tokens.colors.textMuted }}>IA ativa: {workspace?.activeAiProfileName ?? "-"}</Text>
-        <Pressable onPress={() => void logout()} style={{ marginTop: 8 }}>
-          <Text style={{ color: tokens.colors.primary }}>Sair</Text>
-        </Pressable>
 
         <TextInput
           accessibilityLabel="Buscar conversa"
