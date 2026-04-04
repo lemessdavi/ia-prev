@@ -1,8 +1,15 @@
 import { Ionicons } from '@expo/vector-icons'
-import { Tabs } from 'expo-router'
+import { Redirect, Tabs } from 'expo-router'
 import { tokens } from 'config'
+import { useOperatorApp } from '@/context/operatorAppContext'
 
 export default function TabsLayout() {
+  const { isAuthenticated } = useOperatorApp()
+
+  if (!isAuthenticated) {
+    return <Redirect href="/login" />
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -19,20 +26,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbox-ellipses-outline" size={size} color={color} />
         }}
       />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => <Ionicons name="paper-plane-outline" size={size} color={color} />
-        }}
-      />
-      <Tabs.Screen
-        name="dossie"
-        options={{
-          title: 'Dossiê',
-          tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" size={size} color={color} />
-        }}
-      />
+      {/* TODO(lemes): decidir o produto/fluxo de Dossie antes de voltar com essa navegacao. */}
     </Tabs>
   )
 }

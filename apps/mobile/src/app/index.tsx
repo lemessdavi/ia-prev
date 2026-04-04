@@ -1,5 +1,8 @@
-import { Redirect } from 'expo-router';
+import { Redirect, type Href } from "expo-router";
+import { useOperatorApp } from "@/context/operatorAppContext";
 
 export default function Index() {
-  return <Redirect href="/(tabs)" />;
+  const { isAuthenticated } = useOperatorApp();
+  const target = isAuthenticated ? ("/(tabs)" as Href) : "/login";
+  return <Redirect href={target} />;
 }
